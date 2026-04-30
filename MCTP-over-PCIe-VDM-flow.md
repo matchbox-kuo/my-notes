@@ -662,6 +662,35 @@ meta-aspeed-sdk/recipes-phosphor/pmci/libmctp-intel-test/mctp-astpcie-test.c
 - 指定 destination EID/source EID
 - 指定 MCTP message type 與 command payload
 
+## MCTP 上層協定與傳輸內容
+
+MCTP 本身只負責端點之間的訊息封包化、路由、分片與重組；真正的管理語意通常由上層協定承載。換句話說，PCIe VDM 是 transport，MCTP 是 message transport layer，而 SPDM、PLDM、NVMe-MI 這類協定才是實際要傳遞的管理內容。
+
+| 類別 | Protocol over MCTP | 實際傳輸內容 | 常見用途 |
+| --- | --- | --- | --- |
+| 安全 (Security) | SPDM | 憑證、金鑰交換、硬體指紋驗證 (Attestation) | 裝置身分驗證、量測啟動狀態、建立安全通道 |
+| 監控 (Monitoring) | PLDM for Monitoring | 感測器數值、報警訊息、門檻值設定 | 溫度、電壓、電流、風扇、錯誤事件監控 |
+| 韌體 (Firmware) | PLDM for FW Update | 韌體 binary、更新進度、版本回傳 | 裝置韌體更新、更新狀態查詢、版本管理 |
+| 配置 (Control) | PLDM / NVMe-MI | 功耗限制 (Power Cap)、風扇轉速需求、硬碟格式化指令 | 平台控制、儲存裝置管理、操作參數設定 |
+| 拓樸 (Topology) | PLDM PDR | 設備內部硬體結構圖、slot 位置資訊 | 建立 inventory、描述 FRU/slot/sensor 關係 |
+
+可以把資料流想成下面這種分層：
+
+```text
+SPDM / PLDM / NVMe-MI payload
+    |
+    v
+MCTP message: EID, message type, tag, fragmentation
+    |
+    v
+PCIe VDM transport packet
+    |
+    v
+Aspeed MCTP hardware / PCIe fabric
+```
+
+在 BMC 實作上，application 或 daemon 通常只關心 SPDM、PLDM、NVMe-MI 的 request/response；MCTP stack 負責把這些 payload 封裝成 MCTP message，再交給 PCIe VDM transport 送到對應 endpoint。
+
 ## `/dev/aspeed-mctpX` TX flow
 
 這是 legacy Intel `libmctp` 路線。
