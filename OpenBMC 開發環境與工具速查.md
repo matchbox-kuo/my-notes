@@ -23,13 +23,13 @@
 
 編譯 AST2700 映像檔 (obmc-phosphor-image) 非常消耗資源：
 
-* **16GB RAM 環境**：務必在 `local.conf` 限制執行緒，如 `BB_NUMBER_THREADS = "4"` 以避免 OOM 錯誤。  
+* **16GB RAM 環境**：務必在 `local.conf` 限制執行緒，如 `BB_NUMBER_THREADS = "4"` 以避免 OOM 錯誤。
 * **32GB RAM 環境**：可調升至 12 執行緒以上大幅縮短編譯時間。
 
 ### 1.2 繞過網路限制策略
 
-1. 在有網路的環境執行 `bitbake obmc-phosphor-image --runall=fetch`。  
-2. 將 `build/ast2700-default/downloads` 目錄完整搬移至受限環境。  
+1. 在有網路的環境執行 `bitbake obmc-phosphor-image --runall=fetch`。
+2. 將 `build/ast2700-default/downloads` 目錄完整搬移至受限環境。
 3. 在受限環境執行編譯，BitBake 會優先使用本地快取的原始碼。
 
 
@@ -37,21 +37,21 @@
 
 QEMU 模擬 AST2700 虛擬硬體，流程如下：
 
-1. 執行啟動指令後，觀察 `char device redirected to /dev/pts/X` 訊息。  
-2. 使用 `tio /dev/pts/X` 連接序列埠 Console。  
-3. 在 QEMU 視窗輸入 `c` 啟動系統執行。  
+1. 執行啟動指令後，觀察 `char device redirected to /dev/pts/X` 訊息。
+2. 使用 `tio /dev/pts/X` 連接序列埠 Console。
+3. 在 QEMU 視窗輸入 `c` 啟動系統執行。
 4. 登入憑據：帳號 `root` / 密碼 `0penBmc`。
 
 
 ## 📝 三、 常用指令速查表
 
-* \# 初始化編譯環境  
-  `. setup ast2700-default`  
-* \# 執行編譯  
-  `bitbake obmc-phosphor-image`  
-* \# 修改原始碼 (以 obmc-ikvm 為例)  
-  `devtool modify obmc-ikvm`  
-* \# 連接虛擬串口  
+* \# 初始化編譯環境
+  `. setup ast2700-default`
+* \# 執行編譯
+  `bitbake obmc-phosphor-image`
+* \# 修改原始碼 (以 obmc-ikvm 為例)
+  `devtool modify obmc-ikvm`
+* \# 連接虛擬串口
   `tio /dev/pts/2`
 
 ---
@@ -129,4 +129,19 @@ echo 1 > start
 > 你可以把 ConfigFS 想像成一台機器（Linux 核心）的「**控制面板**」：上面的每一個「資料夾」都是一個「可擴充的模組插槽」，每一個「檔案」都是一個「旋鈕或開關」。我們只是借用了「檔案系統」這層外皮，達到設定底層系統與硬體的目的——這正是 AST2700 能夠在不燒錄任何韌體的情況下，透過幾行 Shell 指令就讓 Host 看見一張全新虛擬 PCIe 裝置的根本原因。
 
 ---
-> 📌 本文件整合自開發者筆記與技術對話紀錄，適用於 AST2700 OpenBMC 韌體工程師參考。
+
+## 五、 Kconfig 與 Makefile 的協作關係
+
+Linux 核心原始碼目錄下的各個子資料夾中都散佈著 `Kconfig` 檔案。當開發者或系統管理員準備編譯核心（例如執行 `make menuconfig`）時，建構系統就會收集這些分散的 `Kconfig`，組合出龐大且階層分明的選單介面，讓使用者可以輕鬆勾選想要納入的硬體驅動或系統功能。
+
+在 Linux Kernel (包含 OpenBMC 底層) 的編譯系統中，`Kconfig` 與 `Makefile` 扮演著不同的角色，我們可以將其比喻為「點餐系統」與「廚房」：
+
+1. **`Kconfig` (菜單)**：定義了有哪些功能（菜色）可以開啟、模組化或關閉，以及它們之間的相依性。
+2. **`make menuconfig` (點餐過程)**：讀取 `Kconfig` 產生互動式圖形/文字介面，讓開發者勾選需要的功能。
+3. **`.config` (訂單)**：點餐完成後，系統會生成這個隱藏檔案，記錄所有的設定值（例如 `CONFIG_MCTP=y`）。
+4. **`Makefile` (廚房)**：`Makefile` 程式碼本身通常不需要修改，它會去讀取 `.config` (訂單) 的內容，並根據裡面的變數 (如 `obj-$(CONFIG_MCTP)`) 來決定要編譯哪些 `.c` 原始碼檔案成 `.o` 或是 `.ko` 核心模組。
+
+**總結**：`Kconfig` 負責提供設定介面並產出 `.config` 訂單，而 `Makefile` 負責根據訂單精準執行編譯，這種設計讓超級龐大的專案也能完美解耦。
+
+
+
