@@ -60,7 +60,7 @@ OpenBMC 是一個開源專案，旨在為伺服器與基礎設施的 OOB 管理�
 #### 2.1.2 虛擬 USB 的運作流程
 當伺服器開機，CPU (Host) 啟動 PCIe 硬體枚舉 (Enumeration) 時，這個「指鹿為馬」的過程如下：
 
-1. **PCIe 認親 (Enumeration)**：CPU 掃描 PCIe Bus，在 AST2700 端點上發現新裝置。讀取其 Configuration Space 時，會看到 `Class Code` 標示為 `0C0330` (這在國際標準中代表 USB 3.0 xHCI Controller)。
+1. **PCIe 認親 (Enumeration)**：CPU 掃描 PCIe Bus，在 AST2700 端點上發現新裝置。讀取其 PCIe Configuration Space 時，會看到 `Class Code` 標示為 `0C0330` (這在國際標準中代表 USB 3.0 xHCI Controller)。
 2. **載入通用驅動**：Host 作業系統 (Windows/Linux) 收到這組 Code，完全不會懷疑，直接掛載系統內建的標準 xHCI 驅動程式。此時，實體上根本沒有任何真正的 USB 電子訊號產生，一切的資料溝通都是透過打散的 PCIe TLP 封包傳輸。
 3. **BMC 軟體餵資料 (Virtual Media / KVM)**：這時 BMC 內部的 Linux 系統，會將管理員在 Web UI 上的滑鼠點擊，或是掛載的 `.iso` 重灌映像檔，轉換成符合 xHCI 規範的資料結構 (如 Transfer Rings)，轉包給 PCIe 控制器拋給 Host CPU。
 4. **Host 完美受騙**：Host CPU 收到了標準的 xHCI 資料流，便以為真的有人在主機的 USB 孔插上了一把實體鍵盤與一台隨身碟（這正是遠端 KVM 與虛擬媒體底層的魔法）。
@@ -89,7 +89,7 @@ BMC 此時的行為類似一台標準的桌上型電腦：
 
 1. **決定要扮演誰（身分宣告 / EPF 設定）**
 
-   Linux 透過 **ConfigFS** 介面或專屬的 EP Function（EPF）驅動程式，向 PCIe 控制器寫入 Vendor ID、Device ID、Class Code 等配置空間欄位。這一步決定了 Host 端「認為插進來的是什麼裝置」——例如要冒充 xHCI USB 控制器、NVMe 儲存裝置，或是自定義的管理介面卡（`Class Code = FF00h`）。
+   Linux 透過 **ConfigFS** 介面或專屬的 EP Function（EPF）驅動程式，向 PCIe 控制器寫入 Vendor ID、Device ID、Class Code 等 PCIe Configuration Space 欄位。這一步決定了 Host 端「認為插進來的是什麼裝置」——例如要冒充 xHCI USB 控制器、NVMe 儲存裝置，或是自定義的管理介面卡（`Class Code = FF00h`）。
 
    > 💡 Linux 核心的 **PCIe EPC（Endpoint Controller）** 框架提供了硬體無關的 API，讓 EPF 驅動程式可以統一操作不同廠商的 EP 控制器暫存器，包括 AST2700 的 PCIe 控制器。
 

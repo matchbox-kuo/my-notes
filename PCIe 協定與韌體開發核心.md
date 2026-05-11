@@ -1,13 +1,13 @@
 # ⚡ PCIe 協定與韌體開發核心
 
-> 本文件摘錄自《AST2700 PCIe 韌體開發與 OpenBMC 實務手冊》第二章，涵蓋 PCIe 封包結構、配置空間實務、鏈路建立與枚舉流程、Doorbell / MSI-X / SQ-CQ 通訊機制，以及 Multi-Function Device 宣告方式。適用於 AST2700 PCIe 韌體工程師參考。
+> 本文件摘錄自《AST2700 PCIe 韌體開發與 OpenBMC 實務手冊》第二章，涵蓋 PCIe 封包結構、PCIe Configuration Space 實務、鏈路建立與枚舉流程、Doorbell / MSI-X / SQ-CQ 通訊機制，以及 Multi-Function Device 宣告方式。適用於 AST2700 PCIe 韌體工程師參考。
 
 ---
 
 ## 目錄
 
 - [1.1 PCIe 封包封裝結構](#11-pcie-封包封裝結構-tlp-encapsulation)
-- [1.2 配置空間實務](#12-配置空間-configuration-space-實務)
+- [1.2 PCIe Configuration Space 實務](#12-pcie-configuration-space-實務)
 - [1.3 PCIe 虛擬 USB：xHCI 控制器架構](#13-pcie-虛擬-usb：xhci-控制器架構-usb-over-pcie)
 - [1.4 實務總結：鍵盤與 USB 存取場景對照表](#14-實務總結：鍵盤與-usb-存取場景對照表)
 - [1.5 PCIe 鏈路建立與系統枚舉流程](#15-pcie-鏈路建立與系統枚舉流程-link-training--enumeration)
@@ -32,9 +32,24 @@
 | Data Link Layer   | Sequence Number + LCRC       | 確保順序、重傳機制 (ACK/NAK) 與鏈結層校驗。   |
 | Physical Layer    | Framing Tokens / Sync Header | 標記封包起訖點，進行 128b/130b 編碼 (Gen 4)。 |
 
-### 1.2 配置空間 (Configuration Space) 實務
+**常見 TLP 類型速查**
 
-AST2700 作為 Endpoint (EP)，使用 Type 0 Configuration Space Header。韌體開發者需重點關注以下寄存器：
+| TLP 類型 | 說明 |
+| :--- | :--- |
+| `Memory Read, MRd` | 讀 `Memory Space`，需要 `Completion` 回應。 |
+| `Memory Write, MWr` | 寫 `Memory Space`，通常是 `Posted`，不需要 `Completion`。 |
+| `I/O Read / I/O Write` | `Legacy I/O Space`，用在較舊相容設計，現代系統較少用。 |
+| `Configuration Read / Write Type 0` | 設定同一個 Bus 上的 Endpoint。 |
+| `Configuration Read / Write Type 1` | 經過 Bridge/Switch 往下游 Bus 做 Configuration。 |
+| `Message, Msg` | 傳遞中斷、PM、Hot-Plug、Error 等訊息；`VDM (Vendor Defined Message)` 也屬於此類。 |
+| `Message with Data, MsgD` | `Message` 類型，但會額外攜帶資料 payload；`MCTP over PCIe VDM` 常見使用此類。 |
+| `Completion, Cpl` | 回應 Read / Config / I/O 等 `Non-Posted Request`，不帶資料。 |
+| `Completion with Data, CplD` | `Completion` 且帶回資料，例如 `Memory Read` 的回傳資料。 |
+| `AtomicOp` | 原子操作，例如 `FetchAdd`、`Swap`、`CAS`，常見於高階 PCIe 裝置。 |
+
+### 1.2 PCIe Configuration Space 實務
+
+AST2700 作為 Endpoint (EP)，使用 Type 0 PCIe Configuration Space Header。
 
 * **Command Register (Offset 04h)**：
   * Bit 1 (Memory Space Enable)：開啟對 Memory 地址的響應。
@@ -55,14 +70,14 @@ AST2700 作為 Endpoint (EP)，使用 Type 0 Configuration Space Header。韌體
 #### 1.3.2 虛擬 USB 的運作流程
 當伺服器開機，CPU (Host) 啟動 PCIe 硬體枚舉 (Enumeration) 時，這個「指鹿為馬」的過程如下：
 
-1. **PCIe 認親 (Enumeration)**：CPU 掃描 PCIe Bus，在 AST2700 端點上發現新裝置。讀取其 Configuration Space 時，會看到 `Class Code` 標示為 `0C0330` (這在國際標準中代表 USB 3.0 xHCI Controller)。
+1. **PCIe 認親 (Enumeration)**：CPU 掃描 PCIe Bus，在 AST2700 端點上發現新裝置。讀取其 PCIe Configuration Space 時，會看到 `Class Code` 標示為 `0C0330` (這在國際標準中代表 USB 3.0 xHCI Controller)。
 2. **載入通用驅動**：Host 作業系統 (Windows/Linux) 收到這組 Code，完全不會懷疑，直接掛載系統內建的標準 xHCI 驅動程式。此時，實體上根本沒有任何真正的 USB 電子訊號產生，一切的資料溝通都是透過打散的 PCIe TLP 封包傳輸。
 3. **BMC 軟體餵資料 (Virtual Media / KVM)**：這時 BMC 內部的 Linux 系統，會將管理員在 Web UI 上的滑鼠點擊，或是掛載的 `.iso` 重灌映像檔，轉換成符合 xHCI 規範的資料結構 (如 Transfer Rings)，轉包給 PCIe 控制器拋給 Host CPU。
-4. **Host 完美受騙**：Host CPU 收到了標準的 xHCI 資料流，便以為真的有人在主機的 USB 孔插上了一把實體鍵盤與一台隨身碟（這正是遠端 KVM 與虛擬媒體底層的魔法）。
+4. **Host **：Host CPU 收到了標準的 xHCI 資料流，便以為真的有人在主機的 USB 孔插上了一把實體鍵盤與一台隨身碟（這正是遠端 KVM 與虛擬媒體底層的魔法）。
 
 #### 1.3.3 架構優缺點與開發地雷
 * ✅ **絕對優勢 (省腳位與集中傳輸)**：移除了主機板上超容易受雜訊干擾的實體 USB 銅線 (D+/D-)，也省下了 DC-SCM 金手指上的專屬腳位，全部收斂交由高頻寬、自帶強大糾錯機制的 PCIe 高速公路來統一運送。
-* ⚠️ **開發地雷 (ASPM 省電與斷線風險)**：既然 USB 依附在 PCIe 上，那「皮之不存，毛將焉附」。只要主機的作業系統因為省電策略啟動了 PCIe 的休眠模式 (如 `ASPM L1` 狀態)，或者發生了瞬斷的 PCIe 鏈路重置 (Link Reset)，Host 的 xHCI 驅動就會立刻判定「USB 擴充卡已被拔除」，導致遠端重建的虛擬光碟或正在移動的滑鼠**瞬間全數斷線**！這是韌體開發工程師處理 PCIe 電源管理時最頭痛的難關，必須特別透過設定去禁用或穩住 ASPM 的狀態。
+* ⚠️ **開發地雷 (ASPM 省電與斷線風險)**：既然 USB 依附在 PCIe 上，只要主機的作業系統因為省電策略啟動了 PCIe 的休眠模式 (如 `ASPM L1` 狀態)，或者發生了瞬斷的 PCIe 鏈路重置 (Link Reset)，Host 的 xHCI 驅動就會立刻判定「USB 擴充卡已被拔除」，導致遠端重建的虛擬光碟或正在移動的滑鼠**瞬間全數斷線**！這是韌體開發工程師處理 PCIe 電源管理時最頭痛的難關，必須特別透過設定去禁用或穩住 ASPM 的狀態。
 
 #### 1.3.4 BMC 本機「自用」實體 USB 與 NVMe 儲存
 有時候，工程師會在 SCM 板卡 (BMC 所在環境) 上預留實體的 USB 埠或是 M.2 插槽。如果這個設計是為了讓 **BMC 自己專用**（例如：資料中心需要讓 BMC 儲存海量的 Debug 日誌，或是用作 BMC 的多版本快照備份），而完全不需要交給 Host Server 讀取呢？
@@ -229,22 +244,6 @@ graph TD
 
 ---
 
-**韌體 Debug 常用觀察點**
-
-| 現象 | 最可能的 LTSSM 卡住位置 | 建議排查方向 |
-|:--|:--|:--|
-| 完全無 Link | Detect | 確認 Rx Termination、電源、LTSSM Enable 位元 |
-| Link 停在 Gen1，無法升速 | Recovery.Equalization | 調整 Tx EQ Preset / Coefficient，確認 PCB 佈線損耗 |
-| Link 頻繁掉線 | L0 → Recovery → L0 循環 | 查 AER 暫存器、LCRC 錯誤計數、重新調整 Tx 驅動強度 |
-| USB 虛擬裝置隨機斷線 | L0 → L1.2 → Detect | 停用 ASPM L1.2（在 OS 或 BIOS 設定中禁用） |
-| EP 無法被 Host 識別 | Polling / Configuration | 確認 TS1/TS2 是否有正確回應，檢查 PHY 初始化順序 |
-
-1. **Detect (實體偵測)**：Host (伺服器 CPU) 會從金手指定期送出微弱的測試電訊號。如果另一端有插上設備 (如 AST2700)，因為晶片內部有硬體終端電阻 (Rx Termination)，Host 就會感覺到電流牽引，確認「實體上有人插上來了」。
-2. **Polling (同步與打招呼)**：雙方開始瘋狂發送稱為 `TS1/TS2` 的訓練序列，目的是讓兩邊接收器的時鐘對齊 (Bit Lock / Symbol Lock)。
-3. **Configuration (協商車道)**：雙方開始協商：「你有幾條車道？(Link Width)」、「你的通道訊號要不要反轉？(Lane Reversal)」。最後可能妥協決定：「好，我們降級用 x4 寬度來跑」。
-4. **Recovery (飆速談判)**：預設大家剛認識都會先用最安全的 Gen1 (2.5 GT/s) 速度溝通。如果兩邊交換條件後發現雙方都支援 Gen4，就會在這裡切換電壓與頻率重練，把速度往上拉到 Gen4 (16 GT/s)。
-5. **L0 State (連線開通)**：綠燈亮起！這代表硬體高速公路已全面開通，可以開始雙向傳送正式的 TLP 封包了。（如果在這邊卡住了，硬體 debug 也就是我們口中常說的 `Link Down`，這時候連軟體都不用看了，請硬體工程師先去查波形圖跟 PHY 參數設定）。
-
 
 #### 第二階段：系統枚舉 (Enumeration)
 硬體高速公路開通後，接下來就是 Host 端 BIOS 或是作業系統 (OS) 起床，開始沿著公路查戶口的時候了。這階段全靠 TLP 封包溝通。
@@ -253,7 +252,7 @@ graph TD
 2. **Vendor ID / Device ID**：當 OS 點名掃到 AST2700 時，它必須回報自己的出廠身分證字號（例如 ASPEED 的原廠 Vendor ID 是 `0x1A03`）。如果 OS 讀到的是 `0xFFFF`，就代表這個插槽是空的。
 3. **讀取 BARs**：OS 接著看該裝置填好的 `Base Address Registers (BAR)`，OS 會問：「你需要多大的記憶體空間來當作軟體對話的地盤？」。AST2700 (如設定為 VGA) 可能回答：「請給我 64MB」。
 4. **MMIO 映射**：OS 聽完請求後，會從伺服器的系統實體記憶體池 (Physical Address Space) 中，切一塊真實的連續位址範圍，把它配給 AST2700，並把這個範圍寫回 AST2700 的 BAR 裡面。從此以後，Host CPU 軟體只要往這個記憶體位址寫資料，訊號就會自動被轉成 TLP 封包穿過 PCIe 公路直達 AST2700，這就是 **MMIO (Memory Mapped I/O)** 的精髓。
-5. **Class Code**：最後，OS 看到你的配置空間身分證上頭寫著 `0C0330` (我是一張 xHCI USB 控制器)，就會從 Linux kernel 中自動喚醒相對應的驅動程式。此時，你的裝置才真正「活生生」地出現在系統裡！
+5. **Class Code**：最後，OS 看到你的 PCIe Configuration Space 身分證上頭寫著 `0C0330` (我是一張 xHCI USB 控制器)，就會從 Linux kernel 中自動喚醒相對應的驅動程式。此時，你的裝置才真正「活生生」地出現在系統裡！
 
 #### 1.5.1 韌體介入
 
@@ -262,7 +261,7 @@ graph TD
 * **時機一：跑 LTSSM 之前 (PRE-LTSSM)**
   在硬體狀態機開始 Detect 之前，也就是 BMC 剛通電的第一秒，U-Boot (Bootloader) 或是極早期的 Kernel 初始化代碼就必須動手：
   * **設定 PHY 實體層參數**：你要先告訴硬體，現在的參考時鐘架構是什麼 (SRIS 或 SSC)？訊號的 Tx/Rx 預強波 (Equalization) 係數是多少？
-  * **填寫配置空間 (Configuration Space)**：前一節提到的 Vendor ID、Device ID、BAR 空間大小乃至於 Class Code，通通都是要在硬體開始連線前，由韌體**預先寫入** AST2700 的 PCIe 暫存器裡的！(否則等一下 Host OS 查戶口會查出一張白紙)。
+  * **填寫 PCIe Configuration Space**：前一節提到的 Vendor ID、Device ID、BAR 空間大小乃至於 Class Code，通通都是要在硬體開始連線前，由韌體**預先寫入** AST2700 的 PCIe 暫存器裡的！(否則等一下 Host OS 查戶口會查出一張白紙)。
   * **扣下扳機 (Enable LTSSM)**：這點最重要！只要韌體工程師沒有去設定打開晶片內的 `LTSSM Enable` 控制位元，不管你金手指插得多緊，硬體的狀態機永遠都不會啟動。
 
 * **時機二：LTSSM 卡關時 (Recovery / Link Down)**
@@ -375,7 +374,7 @@ PCIe 定義了三種 EP 通知 Host 的中斷方式，從舊到新依序演進�
 
 **運作原理：**
 
-1. **Host OS 分配**：枚舉時，Host OS 從 MSI Capability Structure 中讀取 EP 需要幾個中斷向量（最多 32 個），並將對應的 **目標記憶體位址** 與 **資料值** 寫回 EP 的配置空間。
+1. **Host OS 分配**：枚舉時，Host OS 從 MSI Capability Structure 中讀取 EP 需要幾個中斷向量（最多 32 個），並將對應的 **目標記憶體位址** 與 **資料值** 寫回 EP 的 PCIe Configuration Space。
 2. **EP 觸發**：EP 需要中斷時，直接發出一筆 Memory Write TLP，寫入 Host 指定的位址與資料。
 3. **Host 處理**：Host 的中斷控制器（如 APIC）收到這筆寫入，對應觸發 CPU 的 IRQ 處理程序。
 
@@ -400,7 +399,7 @@ sequenceDiagram
 | 特性               | MSI                              | MSI-X                                       |
 | :----------------- | :------------------------------- | :------------------------------------------ |
 | **最大向量數**     | 32                               | **2048**                                    |
-| **向量表位置**     | 存放於配置空間（有限）           | 存放於 **BAR 空間**（MSI-X Table，彈性大）  |
+| **向量表位置**     | 存放於 PCIe Configuration Space（有限） | 存放於 **BAR 空間**（MSI-X Table，彈性大）  |
 | **Per-vector Mask**| ❌ 不支援                        | ✅ 每個向量可獨立 Mask/Unmask               |
 | **Pending Bit Array (PBA)** | ❌               | ✅ 可查詢哪些中斷正在等待處理              |
 
@@ -408,16 +407,30 @@ sequenceDiagram
 
 MSI-X 的向量表存放在 EP 的某個 BAR 空間中，每個 Entry 固定 16 Bytes：
 
-```mermaid
-classDiagram
-    class MSIX_Table_Entry {
-        <<16 Bytes per vector>>
-        +Message Address Low (4 Bytes) : Host 分配的目標位址（低 32-bit）
-        +Message Address High (4 Bytes) : 目標位址（高 32-bit，64-bit 系統）
-        +Message Data (4 Bytes) : 觸發中斷時寫入的值（IRQ 編號）
-        +Vector Control (4 Bytes) : Bit 0 = Mask（1 = 此向量被屏蔽）
-    }
-```
+| Offset | 欄位 | 大小 | 主要用途 | 誰負責填寫 / 控制 |
+| :--- | :--- | :--- | :--- | :--- |
+| `+0x00` | `Message Address Low` | 4 Bytes | MSI-X Memory Write 的目標位址低 32-bit | `Host/OS` 分配並寫入 |
+| `+0x04` | `Message Address High` | 4 Bytes | 目標位址高 32-bit | `Host/OS` 分配並寫入 |
+| `+0x08` | `Message Data` | 4 Bytes | 送出中斷時要一起寫入的資料值 | `Host/OS` 分配並寫入 |
+| `+0x0C` | `Vector Control` | 4 Bytes | 控制這個 vector 是否暫時被遮罩 | `Host/OS` 或韌體依需求控制 |
+
+可以把一個 MSI-X Entry 想成：
+
+- `Address`：中斷要寫到 Host 哪裡
+- `Data`：寫進去的內容是什麼
+- `Mask`：這個 vector 目前可不可以送
+
+其中最常看的控制位是：
+
+- `Vector Control[0] = Mask Bit`
+- `0`：此 vector 可送出中斷
+- `1`：此 vector 被屏蔽，暫時不送
+
+實際觸發時，EP 並不是去改這張表，而是：
+
+1. 讀出該 Entry 已經被 Host 填好的 `Address/Data`
+2. 硬體送出一筆 `Memory Write TLP`
+3. 寫到對應的 Host 中斷目標位址，完成 MSI-X 通知
 
 **三種中斷機制總覽比較**
 
@@ -427,19 +440,41 @@ classDiagram
 | **最大向量數**     | 4（A/B/C/D）         | 32                   | 2048                  |
 | **是否共享**       | 可能共享             | 不共享               | 不共享                |
 | **Per-vector Mask**| ❌                   | ❌                   | ✅                    |
-| **配置空間 Cap ID**| 無（預設行為）       | `05h`                | `11h`                 |
+| **PCIe Configuration Space Cap ID**| 無（預設行為）       | `05h`                | `11h`                 |
 | **適用場景**       | 舊裝置相容           | 一般 EP 裝置         | NVMe、高速網卡、AST2700 |
 
-> 💡 **韌體開發慣例**：現代 EP 韌體通常在配置空間同時宣告 MSI 與 MSI-X Capability，讓 Host OS 自行選擇最佳方式。Host 在枚舉時，如果偵測到 MSI-X 支援，通常會**優先使用 MSI-X**，並停用 MSI 與 INTx。
+> 💡 **韌體開發慣例**：現代 EP 韌體通常在 PCIe Configuration Space 中同時宣告 MSI 與 MSI-X Capability，讓 Host OS 自行選擇最佳方式。Host 在枚舉時，如果偵測到 MSI-X 支援，通常會**優先使用 MSI-X**，並停用 MSI 與 INTx。
 
-**AST2700 韌體開發實務**
+**Host 如何判斷 EP 支援 MSI 或 MSI-X**
 
-在 AST2700 EP 韌體中設定 MSI-X 的典型流程：
+Host 是在 **PCI Configuration Space** 中檢查 **Capabilities Linked List**：
 
-1. **宣告 Capability**：在配置空間的 Capabilities Linked List 中加入 MSI-X Capability Structure（Cap ID = `11h`），填寫需要的向量數（Table Size）、MSI-X Table 在哪個 BAR 及偏移量、PBA 位置。
-2. **等待 Host 填表**：Host OS 枚舉後會自動將 Message Address 與 Message Data 填入 MSI-X Table 的每個 Entry。
-3. **觸發中斷**：EP 韌體需要通知 Host 時，直接由硬體發出對應 Entry 定義的 Memory Write TLP。大多數 SoC 會提供一個「Write-to-trigger」的控制暫存器，韌體只需寫入對應的向量編號即可。
-4. **Mask 控制**：在某些情況下（如初始化未完成），韌體可透過設定 Vector Control 的 Bit 0 暫時屏蔽特定向量，避免 Host 提前收到中斷。
+1. **先看 Header Status Register**：Host 讀取 PCI Header 的 `Status Register`，確認 `Capabilities List` bit 是否為 1。若此 bit 未設起，代表沒有標準 capability linked list 可走訪。
+2. **找到第一個 Capability Pointer**：對一般 Type 0 Header 而言，Host 會從 offset `34h` 讀出第一個 capability 的 pointer。
+3. **沿著 linked list 逐項走訪**：每個 capability 結構前 2 Bytes 都包含：
+   - `Capability ID`
+   - `Next Capability Pointer`
+4. **依 Capability ID 判斷支援項目**：
+   - `05h` = **MSI Capability**
+   - `11h` = **MSI-X Capability**
+5. **據此決定可用中斷模式**：
+   - 只有 `05h`：表示 EP 支援 MSI
+   - 只有 `11h`：表示 EP 支援 MSI-X
+   - `05h` 與 `11h` 都有：表示兩者都支援，現代 OS/driver 通常優先選 MSI-X
+   - 兩者都沒有：退回使用傳統 `INTx`
+
+可以把這件事理解成：
+
+- **Configuration Space 負責宣告能力**
+- **BAR 空間負責放運作時資料結構**
+
+因此：
+
+- `MSI` 的能力與寄存器欄位直接放在 `MSI Capability` 裡
+- `MSI-X` 的能力宣告放在 `MSI-X Capability` 裡，但真正的 **MSI-X Table** 則位於某個 `BAR` 指向的 MMIO 空間
+
+> ⚠️ **支援不等於啟用**：Host 看到 `05h` 或 `11h`，只代表這顆 EP **有能力**使用 MSI / MSI-X；真正進入工作狀態，還要由 OS 或 driver 後續寫入 capability control bits，甚至填入 MSI-X Table 的 Message Address / Message Data，才算正式啟用。
+
 
 #### 1.5.4 SQ / CQ 佇列機制（Submission Queue / Completion Queue）
 
@@ -620,7 +655,7 @@ sequenceDiagram
 
 在 AST2700 的 EP 韌體中，Mailbox 的完整設定流程如下：
 
-1. **BAR 空間規劃**：在 PCIe 配置空間初始化時，將 Mailbox 暫存器區塊配置在 BAR0（或 BAR2）的固定偏移地址。Host OS 枚舉後即可透過 MMIO 直接存取。
+1. **BAR 空間規劃**：在 PCIe Configuration Space 初始化時，將 Mailbox 暫存器區塊配置在 BAR0（或 BAR2）的固定偏移地址。Host OS 枚舉後即可透過 MMIO 直接存取。
 
 2. **中斷綁定**：
    - **Host → BMC 方向**：將 Doorbell 暫存器（通常緊鄰 Mailbox 區塊）的寫入事件綁定至 BMC 內部 IRQ，觸發 `mailbox_isr()`。
@@ -708,21 +743,43 @@ PCIe 的 TLP 封包類型中，除了常見的 Memory Read/Write 之外，還有
 當一筆 MCTP 訊息透過 PCIe VDM 傳送時，其封包結構宛如俄羅斯娃娃：
 
 ```mermaid
-classDiagram
-    class PCIe_VDM_TLP {
-        <<PCIe 封裝外衣>>
-        +TLP Header : MsgD (Message with Data) 類型, Route Control
-        +Vendor ID : DMTF 固定為 0x1AB4
-        +MCTP Transport Header (4 Bytes) : EID、封包序號與分段控制
-        +MCTP Message Payload : PLDM / SPDM / NVMe-MI 指令內容
-        +TLP LCRC : 鏈路層校驗碼
-    }
+flowchart TB
+    subgraph A["PCIe MsgD TLP"]
+        direction TB
+        subgraph B["DMTF VDM"]
+            direction TB
+            subgraph C["MCTP Transport Header (4 Bytes)"]
+                direction TB
+                D["MCTP Message Payload"]
+            end
+        end
+    end
+
+    style A fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#111827
+    style B fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#111827
+    style C fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#111827
+    style D fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#111827
 ```
+
+| 層次 | 這一層新增的欄位 | 作用 |
+| :--- | :--- | :--- |
+| <span style="display:inline-block;padding:2px 6px;border:1px solid #2563eb;background:#dbeafe;border-radius:4px;">PCIe MsgD TLP</span> | `Fmt/Type`、`Length`、`Requester ID`、`Route Control` | 把整包資料變成一筆可在 PCIe fabric 上傳送的 `MsgD` 封包，並決定路由方式。 |
+| <span style="display:inline-block;padding:2px 6px;border:1px solid #7c3aed;background:#ede9fe;border-radius:4px;">DMTF VDM</span> | `Vendor ID = 0x1AB4` | 告訴接收端這不是一般 Message，而是 DMTF 定義的 VDM。 |
+| <span style="display:inline-block;padding:2px 6px;border:1px solid #16a34a;background:#dcfce7;border-radius:4px;">MCTP Transport Header</span> | `Source EID`、`Destination EID`、`SOM`、`EOM`、`Packet Sequence`、`TO` | 描述這筆 MCTP 封包要送給誰、是不是分段封包、這是第幾段。 |
+| <span style="display:inline-block;padding:2px 6px;border:1px solid #d97706;background:#fef3c7;border-radius:4px;">MCTP Message Payload</span> | `Message Type`、上層協定資料 | 真正承載 `PLDM`、`SPDM`、`NVMe-MI` 等內容。 |
+| <span style="display:inline-block;padding:2px 6px;border:1px solid #6b7280;background:#f3f4f6;border-radius:4px;">PCIe Link Protection</span> | `LCRC` | 提供 PCIe 鏈路層的完整性校驗。 |
+
+也可以把它想成：
+
+1. 先用 `MsgD` 這個 PCIe 外殼把封包送上路
+2. 在裡面標明這是一筆 `DMTF VDM`
+3. 再塞入 `MCTP Transport Header`
+4. 最裡面才是真正的 `PLDM / SPDM / NVMe-MI` 內容
 
 **在 AST2700 韌體中的實作重點：**
 在 AST2700 韌體開發中，處理 MCTP over VDM 需要留意以下環節：
-1. **VDM 控制器啟用**：AST2700 內建了硬體層級的 MCTP/VDM 控制器，韌體需設定將其綁定至對應的 PCIe Function，並確保配置空間的 VDM Enable 位元已開啟。
-2. **EID 動態分配**：端點 ID (Endpoint ID) 是 MCTP 的網址。AST2700 啟動後，需透過 MCTP Control Message 向 Host 端的 Bus Owner 請求分配專屬的 EID。
+1. **VDM 控制器啟用**：AST2700 內建了硬體層級的 MCTP/VDM 控制器，韌體需設定將其綁定至對應的 PCIe Function，並確保 PCIe Configuration Space 的 VDM Enable 位元已開啟。
+2. **EID 動態分配**：端點 ID (Endpoint ID) 是 MCTP 的網址。在 MCTP over PCIe VDM 架構中，Bus Owner 常位於 PCIe Root Complex 一側；AST2700 啟動後，若採用動態 EID，需透過 MCTP Control Message 與該 Bus Owner 互動，以取得或確認自身的 EID。
 3. **收發與中斷處理**：當 AST2700 硬體收到目標為自己 EID 的 VDM 封包時，會將 Payload 放入內部 FIFO 並觸發中斷。韌體 ISR 需快速將資料取出，轉交給 OpenBMC 的 `mctpd` 服務進行高階協議解析。
 
 ---
@@ -794,9 +851,9 @@ Msg TLP 是 PCIe 高速公路上的「警車、救護車與郵務車」，它們
 | Bit 7    | **Multi-Function 旗標** | **1** = Multi-Function Device；**0** = Single-Function |
 | Bit 6:0  | Header Layout Type      | `0x00` = Type 0（Endpoint）；`0x01` = Type 1（Bridge） |
 
-**韌體只需要在 Configuration Space 初始化時，將 Bit 7 設為 1，Host 即可識別為 MFD。**
+**韌體只需要在 PCIe Configuration Space 初始化時，將 Bit 7 設為 1，Host 即可識別為 MFD。**
 
-> ⚠️ **開發注意**：軟體在判斷 Header Type（Type 0 / Type 1）時，必須先用 `& 0x7F` 把 Bit 7 遮罩掉，才能正確讀出 Layout Type，避免誤判。
+
 
 一個典型的 MFD 範例如下所示，三個 Function 共享同一個 Device Number：
 
@@ -835,22 +892,6 @@ Host 讀取每個 Function 的 **Vendor ID (Offset 00h)**：
 * **非 `0xFFFF`**：Function 存在，繼續讀取並初始化該 Function。
 * **`0xFFFF`**：無硬體回應，該 Function 不存在，跳過。
 
-**掃描邏輯虛擬碼（Pseudo Code）**
-
-```c
-// 讀取 Function 0
-if (Read_HeaderType(Func0) & 0x80) {   // Bit 7 = 1，是 MFD
-    for (int func = 1; func < 8; func++) {
-        uint16_t vid = Read_VendorID(func);
-        if (vid != 0xFFFF) {
-            Initialize_Function(func);  // 發現並初始化
-        }
-        // 0xFFFF → 此 Function 不存在，繼續下一個
-    }
-} else {
-    // Single-Function Device，不掃 Func 1~7
-}
-```
 
 > 💡 **ARI 延伸**：在支援 **ARI (Alternative Routing-ID Interpretation)** 的設備（如 SR-IOV 虛擬化場景）中，一個 Device 可突破 8 個 Function 的限制，擴展至最多 **256 個 Function**。此時 Host 透過 Capability 串列中的 **Next Function Pointer** 來鏈式尋找，而非線性掃描 0~7。
 
