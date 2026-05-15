@@ -628,82 +628,7 @@ driver 不只是碰硬體，還要讓其他 kernel 元件或 user space 能使�
 
 ---
 
-### 2.5 Driver 怎麼印 debug 訊息
-
-寫 driver 時，最常見的 debug 手段之一就是印 log。
-
-初學先記這幾個最常用的就夠了：
-
-- `printk()`
-- `pr_info()`
-- `pr_err()`
-- `dev_info()`
-- `dev_err()`
-- `dev_dbg()`
-
-#### `printk()`
-
-這是最底層、最通用的 kernel log function，概念上很像 kernel world 的 `printf()`。
-
-例如：
-
-```c
-printk(KERN_INFO "Mercury EP started\n");
-```
-
-不過在 driver 裡，現在通常更常用 `pr_*()` 或 `dev_*()` 這類包好的介面。
-
-#### `pr_*()` 系列
-
-這是一組比較方便的全域 log 巨集，例如：
-
-- `pr_info()`
-- `pr_warn()`
-- `pr_err()`
-- `pr_debug()`
-
-例如：
-
-```c
-pr_err("failed to init Mercury EP\n");
-```
-
-這類寫法適合沒有特定 `struct device *dev` 可以掛訊息的情況。
-
-#### `dev_*()` 系列
-
-如果你手上有 `struct device *dev`，通常更推薦用：
-
-- `dev_info(dev, ...)`
-- `dev_warn(dev, ...)`
-- `dev_err(dev, ...)`
-- `dev_dbg(dev, ...)`
-
-例如：
-
-```c
-dev_info(dev, "registered JMicron Mercury EP controller\n");
-dev_err(dev, "failed to map registers\n");
-dev_dbg(dev, "MSI phys addr = %pa\n", &ep->msi_phys_addr);
-```
-
-這類好處是 log 會自帶裝置脈絡，之後看訊息時比較容易知道是哪一個 device 印的。
-
-#### 初學先怎麼選
-
-可以先這樣記：
-
-- 想快速印 kernel 訊息：`pr_info()` / `pr_err()`
-- 在 driver 裡而且手上有 `dev`：優先用 `dev_info()` / `dev_err()`
-- 想放比較多除錯訊息：用 `dev_dbg()`
-
-一句話總結：
-
-<div style="background:#e8f7e8; border-left: 4px solid #6bbf73; padding: 10px 14px; border-radius: 6px;">
-driver debug 最常用的是 `pr_*()` 和 `dev_*()`；如果手上有 `struct device *dev`，通常優先用 `dev_info()`、`dev_err()`、`dev_dbg()`。
-</div>
-
-### 2.6 Driver 和 Kernel Subsystem 的關係
+### 2.5 Driver 和 Kernel Subsystem 的關係
 
 很多新手會以為 driver 是各寫各的，但 Linux kernel 其實很重視「先進入 framework，再掛接 driver」。
 
@@ -726,7 +651,7 @@ driver debug 最常用的是 `pr_*()` 和 `dev_*()`；如果手上有 `struct de
 
 ---
 
-### 2.7 Platform Driver、PCI Driver、USB Driver 有什麼差別
+### 2.6 Platform Driver、PCI Driver、USB Driver 有什麼差別
 
 driver 會依照裝置是怎麼被發現的，分成不同型態。最常見可以先看三種：
 
@@ -795,7 +720,7 @@ module_platform_driver(jmicron_mercury_ep_driver);
 
 ---
 
-### 2.8 Driver 和 Module 的關係
+### 2.7 Driver 和 Module 的關係
 
 這一節最容易混淆的地方是：`driver` 和 `module` 不是同一件事。
 
@@ -853,7 +778,7 @@ driver 是「做什麼」，module 是「怎麼載入」；很多 driver 會做�
 
 ---
 
-### 2.9 用一個具體例子來看
+### 2.8 用一個具體例子來看
 
 假設今天是 `PCIe UART` 裝置，大致流程可以這樣想：
 
@@ -875,7 +800,7 @@ driver 是「做什麼」，module 是「怎麼載入」；很多 driver 會做�
 
 ---
 
-### 2.10 初學 driver 時最值得先建立的觀念
+### 2.9 初學 driver 時最值得先建立的觀念
 
 先把下面幾件事記熟，後面學 driver 會順很多：
 
@@ -889,4 +814,167 @@ driver 是「做什麼」，module 是「怎麼載入」；很多 driver 會做�
 
 <div style="background:#e8f7e8; border-left: 4px solid #6bbf73; padding: 10px 14px; border-radius: 6px;">
 Driver Layer 是 Linux kernel 裡最貼近硬體、但又必須同時理解 kernel 架構的一層。
+</div>
+
+---
+
+## 第三章：Driver 常用除錯與 register field 操作
+
+<div style="background:#fff4e8; border-left: 4px solid #f0a35e; padding: 10px 14px; border-radius: 6px;">
+這一章整理兩個實作時很常碰到的小工具：一個是 driver debug 訊息怎麼印，另一個是 register field 怎麼寫得清楚又不容易錯。
+</div>
+
+### 3.1 Driver 怎麼印 debug 訊息
+
+寫 driver 時，最常見的 debug 手段之一就是印 log。
+
+初學先記這幾個最常用的就夠了：
+
+- `printk()`
+- `pr_info()`
+- `pr_err()`
+- `dev_info()`
+- `dev_err()`
+- `dev_dbg()`
+
+#### `printk()`
+
+這是最底層、最通用的 kernel log function，概念上很像 kernel world 的 `printf()`。
+
+```c
+printk(KERN_INFO "Mercury EP started\n");
+```
+
+不過在 driver 裡，現在通常更常用 `pr_*()` 或 `dev_*()` 這類包好的介面。
+
+#### `pr_*()` 系列
+
+這是一組比較方便的全域 log 巨集，例如：
+
+- `pr_info()`
+- `pr_warn()`
+- `pr_err()`
+- `pr_debug()`
+
+```c
+pr_err("failed to init Mercury EP\n");
+```
+
+這類寫法適合沒有特定 `struct device *dev` 可以掛訊息的情況。
+
+#### `dev_*()` 系列
+
+如果你手上有 `struct device *dev`，通常更推薦用：
+
+- `dev_info(dev, ...)`
+- `dev_warn(dev, ...)`
+- `dev_err(dev, ...)`
+- `dev_dbg(dev, ...)`
+
+```c
+dev_info(dev, "registered JMicron Mercury EP controller\n");
+dev_err(dev, "failed to map registers\n");
+dev_dbg(dev, "MSI phys addr = %pa\n", &ep->msi_phys_addr);
+```
+
+這類好處是 log 會自帶裝置脈絡，之後看訊息時比較容易知道是哪一個 device 印的。
+
+#### 初學先怎麼選
+
+可以先這樣記：
+
+- 想快速印 kernel 訊息：`pr_info()` / `pr_err()`
+- 在 driver 裡而且手上有 `dev`：優先用 `dev_info()` / `dev_err()`
+- 想放比較多除錯訊息：用 `dev_dbg()`
+
+<div style="background:#e8f7e8; border-left: 4px solid #6bbf73; padding: 10px 14px; border-radius: 6px;">
+driver debug 最常用的是 `pr_*()` 和 `dev_*()`；如果手上有 `struct device *dev`，通常優先用 `dev_info()`、`dev_err()`、`dev_dbg()`。
+</div>
+
+---
+
+### 3.2 register field 操作推薦用哪些
+
+driver 很常需要讀寫 register，但實務上真正容易出錯的，常常不是整顆 register，而是其中某一個 bit 或某一段 field。
+
+#### 單一 bit：`BIT(n)`
+
+單一開關位元，通常用 `BIT(n)`：
+
+```c
+#define CTRL_ENABLE   BIT(0)
+#define CTRL_INT_EN   BIT(3)
+```
+
+#### 連續 field：`GENMASK(h, l)`
+
+一段連續 bit 代表模式、大小、狀態碼時，通常用 `GENMASK(high, low)`：
+
+```c
+#define CTRL_MODE_MASK   GENMASK(3, 1)
+#define CTRL_SPEED_MASK  GENMASK(7, 4)
+```
+
+#### 寫入 field：`FIELD_PREP(mask, val)`
+
+`FIELD_PREP()` 是把值準備成可以放進指定 field 的格式；它本身不會寫 register。
+
+```c
+val &= ~CTRL_MODE_MASK;
+val |= FIELD_PREP(CTRL_MODE_MASK, mode);
+```
+
+#### 讀出 field：`FIELD_GET(mask, reg)`
+
+```c
+u32 mode = FIELD_GET(CTRL_MODE_MASK, val);
+```
+
+#### 如果你自己比較習慣 `SET_FIELD()`
+
+如果你自己寫筆記或專案 helper，覺得每次手寫 `& ~mask` 和 `| FIELD_PREP(...)` 很煩，也可以自己包一層。
+
+<div style="background:#ffe3ee; border-left: 4px solid #e26d93; padding: 10px 14px; border-radius: 6px;">
+`SET_FIELD()` 不是 Linux kernel 內建標準巨集。它是你自己額外加的 helper；看別人的 kernel code 時，還是更常看到原生的 `FIELD_PREP()` 寫法。
+</div>
+
+```c
+#define SET_FIELD(reg, mask, val) \
+	(((reg) & ~(mask)) | FIELD_PREP((mask), (val)))
+```
+
+```c
+reg = SET_FIELD(reg, CTRL_MODE_MASK, mode);
+```
+
+如果你希望讀取時也維持同樣語意，可以再自己包：
+
+```c
+#define GET_FIELD(reg, mask) \
+	FIELD_GET((mask), (reg))
+```
+
+#### 一個常見、可讀性高的寫法
+
+```c
+#define REG_CTRL         0x00
+#define CTRL_ENABLE      BIT(0)
+#define CTRL_MODE_MASK   GENMASK(3, 1)
+
+u32 val;
+
+val = readl(base + REG_CTRL);
+val |= CTRL_ENABLE;
+val = SET_FIELD(val, CTRL_MODE_MASK, mode);
+writel(val, base + REG_CTRL);
+```
+
+#### 不太推薦的寫法
+
+- 直接寫 `0x40`、`0x8000` 這種 magic number
+- 到處手寫 `(val >> 4) & 0x7` 卻沒有命名 field
+- 寫 register 時整顆覆蓋，卻沒有先保留其他 bit
+
+<div style="background:#e8f7e8; border-left: 4px solid #6bbf73; padding: 10px 14px; border-radius: 6px;">
+如果是 Linux driver 裡的 register field 操作，最推薦先認得 `BIT()`、`GENMASK()`、`FIELD_PREP()`、`FIELD_GET()`；如果你想讓自己寫的 code 更順手，再額外包 `SET_FIELD()`。
 </div>
