@@ -1,131 +1,457 @@
-# 🛠️ OpenBMC 開發環境與工具速查
+# OpenBMC 開發環境與工具速查
 
-> 本文件摘錄自《AST2700 PCIe 韌體開發與 OpenBMC 實務手冊》，涵蓋 QEMU 模擬流程、常用指令速查、ConfigFS 操作觀念，以及 Kconfig / Makefile 的協作關係。
+> 這份筆記整理 OpenBMC 開發時最常碰到的幾個主題：`Yocto`、`BitBake`、交叉編譯、QEMU、`ConfigFS`、`Kconfig` 與 `Makefile`。重點放在「它們是什麼、彼此怎麼接起來、實際開發時要先做什麼」。
 
 ---
 
 ## 目錄
 
-- [一、 QEMU 模擬與除錯實務](#一-qemu-模擬與除錯實務)
-- [二、 常用指令速查表](#二-常用指令速查表)
-- [三、 ConfigFS 虛擬檔案系統：PCIe EP 設定的控制面板](#三-configfs-虛擬檔案系統pcie-ep-設定的控制面板)
-  - [3.1 存放位置與生命週期](#31-存放位置與生命週期)
-  - [3.2 存在的目的](#32-存在的目的)
-  - [3.3 指令背後的真實意義](#33-指令背後的真實意義pcie-ep-驗證關鍵)
-- [四、 Kconfig 與 Makefile 的協作關係](#四-kconfig-與-makefile-的協作關係)
+- [1. OpenBMC 建置全貌](#1-openbmc-建置全貌)
+- [2. Yocto 與 BitBake 是什麼](#2-yocto-與-bitbake-是什麼)
+- [3. 編譯前要先準備什麼](#3-編譯前要先準備什麼)
+- [4. AST2700 的異質交叉編譯觀念](#4-ast2700-的異質交叉編譯觀念)
+- [5. QEMU 模擬與除錯實務](#5-qemu-模擬與除錯實務)
+- [6. ConfigFS：用檔案系統外觀操作核心](#6-configfs用檔案系統外觀操作核心)
+- [7. Kconfig 與 Makefile 的協作關係](#7-kconfig-與-makefile-的協作關係)
 
 ---
 
+## 1. OpenBMC 建置全貌
 
-## 🐛 一、 QEMU 模擬與除錯實務
+OpenBMC 不是單純把一個應用程式編成執行檔，而是要一路產出：
 
-QEMU 模擬 AST2700 虛擬硬體，流程如下：
+- Bootloader，例如 `U-Boot`
+- 安全韌體，例如 `TF-A`
+- Linux Kernel
+- Root File System
+- 各種 BMC user-space 服務，例如 `bmcweb`、`phosphor-*`
+- 最後可燒錄到 SPI Flash 的整包 image
 
-1. 執行啟動指令後，觀察 `char device redirected to /dev/pts/X` 訊息。
-2. 使用 `tio /dev/pts/X` 連接序列埠 Console。
-3. 在 QEMU 視窗輸入 `c` 啟動系統執行。
-4. 登入憑據：帳號 `root` / 密碼 `0penBmc`。
+可以把它想成一座自動化工廠：
 
-
-## 📝 二、 常用指令速查表
-
-* \# 初始化編譯環境
-  `. setup ast2700-default`
-* \# 執行編譯
-  `bitbake obmc-phosphor-image`
-* \# 修改原始碼 (以 obmc-ikvm 為例)
-  `devtool modify obmc-ikvm`
-* \# 連接虛擬串口
-  `tio /dev/pts/2`
+```mermaid
+flowchart LR
+    A[原始碼與配方<br/>recipes layers patches] --> B[Yocto / BitBake]
+    B --> C[下載原始碼<br/>do_fetch]
+    B --> D[套用修補<br/>do_patch]
+    B --> E[設定與編譯<br/>do_configure do_compile]
+    B --> F[安裝與打包<br/>do_install do_rootfs do_image]
+    F --> G[OpenBMC 映像檔]
+```
 
 ---
 
-## 🔧 三、 ConfigFS 虛擬檔案系統：PCIe EP 設定的控制面板
+## 2. Yocto 與 BitBake 是什麼
 
-FAT、NTFS、ext4 是我們熟知的**「實體檔案系統（Disk-based File System）」**；而 ConfigFS（以及 Linux 常見的 `sysfs`、`procfs`）則屬於**「虛擬檔案系統（Virtual / Pseudo File System）」**。
+### Yocto 是什麼
 
-它們雖然都叫「檔案系統」，也都可以用 `ls`、`cd`、`mkdir` 來操作，但本質與用途有天壤之別。
+`Yocto Project` 是 Linux Foundation 旗下的開源專案，用來建立嵌入式 Linux 發行版。它提供：
 
-### 3.1 存放位置與生命週期
+- 建置框架
+- metadata 格式
+- layer 機制
+- cross toolchain 產生流程
+- 可重複建置的工作模式
 
-| | 實體檔案系統（FAT / NTFS / ext4）| 虛擬檔案系統（ConfigFS）|
-|:--|:--|:--|
-| **儲存位置** | 實體硬碟 / SSD / 隨身碟 | 完全存在於 **RAM（記憶體）** 中 |
-| **生命週期** | 斷電後資料仍保留 | **重開機或斷電即消失** |
-| **由誰建立** | 格式化時寫入磁碟結構 | Linux 核心**開機後動態生成** |
+它不是 `.bat`，也不是單一 shell script。它比較像「一套用 metadata 驅動的發行版建置平台」。
 
-> [!IMPORTANT]
-> 這也是為什麼凡是透過 ConfigFS 設定的 PCIe EP 功能，**每次開機都必須重跑設定腳本**——所有設定都存在記憶體中，重開機後一片空白。
+### BitBake 是什麼
 
-### 3.2 存在的目的
-
-- **實體檔案系統**：目的是「**儲存資料**」。就像一個檔案櫃——把文件放進去，下次需要時再拿出來。
-
-- **ConfigFS**：目的是提供一個**「讓 User-space（使用者空間）控制 Kernel-space（核心空間）的操作面板」**。
-
-  Linux 核心為了讓工程師不需要撰寫 C 語言程式就能動態設定底層硬體，便把「設定開關」**偽裝成「資料夾與檔案」的外形**，讓你用熟悉的 Shell 指令去操作。
-
-### 3.3 指令背後的真實意義（PCIe EP 驗證關鍵）
-
-這是理解 ConfigFS 最關鍵的一點——**相同的指令，在不同的檔案系統下，觸發的是截然不同的動作：**
-
-#### mkdir：建資料夾 vs. 實體化核心物件
+`BitBake` 是 Yocto 的任務引擎。你敲的通常是：
 
 ```bash
-# 在 NTFS / ext4 下
-mkdir new_folder
-# → 在硬碟上劃分一小塊空間，記錄「這裡有一個空目錄」。僅此而已。
+bitbake obmc-phosphor-image
+```
 
-# 在 ConfigFS 下
+它做的不是照順序把幾個命令跑完，而是：
+
+1. 讀 recipe 與設定
+2. 算出依賴圖
+3. 決定哪些 task 要跑
+4. 平行執行可並行的工作
+5. 使用快取避免重編
+
+### 一句話記法
+
+- `Yocto`：整個建置生態與方法論
+- `BitBake`：實際執行配方與任務的引擎
+
+### Layer 是什麼
+
+Yocto 最重要的概念之一就是 layer。每一層負責不同範圍：
+
+| Layer 類型 | 典型內容 |
+|:--|:--|
+| `meta-phosphor` | OpenBMC 共通框架與服務 |
+| `meta-aspeed` | ASPEED SoC/BSP 相關內容 |
+| `meta-<vendor>` | 系統廠共用客製化 |
+| `meta-<board>` | 特定機種、特定板子的設定 |
+
+這種分層設計的好處是：你可以在自己的 layer 覆寫或追加設定，而不是直接魔改上游原始碼。
+
+### `.bb` 與 `.bbappend` 是什麼
+
+在 Yocto 裡，最常看到的兩種 metadata 檔案就是 `.bb` 與 `.bbappend`。
+
+| 檔案類型 | 用途 |
+|:--|:--|
+| `.bb` | 定義一個 recipe，也就是「這個套件要怎麼抓、怎麼補 patch、怎麼編、怎麼安裝」 |
+| `.bbappend` | 對既有 recipe 做追加或覆寫，不直接改原本那份 `.bb` |
+
+可以把它們想成：
+
+- `.bb`：原始食譜
+- `.bbappend`：你自己加註的修改單
+
+### `.bb` 會寫什麼
+
+一個 `.bb` 通常會描述：
+
+- 套件名稱與版本
+- 原始碼從哪裡抓
+- 要套哪些 patch
+- 相依哪些套件
+- 怎麼 configure / compile / install
+- 最後安裝哪些檔案到 image
+
+例如常會看到這類內容：
+
+```conf
+DESCRIPTION = "Example package"
+LICENSE = "MIT"
+SRC_URI = "git://example.com/project.git;branch=main"
+S = "${WORKDIR}/git"
+
+DEPENDS += "openssl"
+```
+
+BitBake 會依據這些內容去產生對應 task，例如 `do_fetch`、`do_patch`、`do_compile`、`do_install`。
+
+### `.bbappend` 會寫什麼
+
+當上游已經有某個 recipe，但你想針對自己平台加東西，通常就不要直接改原本 `.bb`，而是在自己的 layer 寫 `.bbappend`。
+
+常見用途有：
+
+- 追加 patch
+- 補 device tree 檔案
+- 改安裝內容
+- 加入額外相依
+- 覆寫某些變數
+
+例如：
+
+```conf
+FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
+SRC_URI += "file://0001-fix-board-init.patch"
+```
+
+這表示：保留原 recipe，本 layer 額外再補一個 patch 進去。
+
+### 為什麼 `.bbappend` 很重要
+
+`.bbappend` 是 OpenBMC / Yocto 客製化最常用的做法，因為它有幾個好處：
+
+- 不必直接改上游 layer
+- 上游更新時比較容易跟進
+- 客製內容集中在自己的 layer，比較好維護
+- 同一份上游 recipe 可以被不同 board layer 各自追加設定
+
+### 一句話記法
+
+- `.bb`：定義這個套件本來怎麼 build
+- `.bbappend`：在不改上游 recipe 的前提下，替它加料或微調
+
+---
+
+## 3. 編譯前要先準備什麼
+
+很多新手以為 `bitbake` 是起點，其實它比較像「最後按下開始」的那一步。前面的環境準備才是建置能不能順利的關鍵。
+
+### 3.1 載入環境
+
+常見做法是先執行專案提供的初始化腳本，例如：
+
+```bash
+. setup ast2700-default
+```
+
+或是較標準的 Yocto 形式：
+
+```bash
+export TEMPLATECONF=meta-xxx/conf/templates/default
+source oe-init-build-env build
+```
+
+這一步通常會完成：
+
+- 建立 `build/` 工作目錄
+- 匯入 BitBake/Yocto 需要的環境變數
+- 準備 `conf/` 下的設定檔
+
+### 3.2 `bblayers.conf`
+
+`build/conf/bblayers.conf` 決定這次建置要載入哪些 layer。
+
+BitBake 在啟動並解析環境時，就會先讀這個檔案。換句話說，當你執行：
+
+```bash
+bitbake obmc-phosphor-image
+```
+
+它很早就會用到 `bblayers.conf`，因為 BitBake 得先知道「要去哪些 layer 找 recipes、append、classes 與 machine 設定」。
+
+最重要的內容通常是 `BBLAYERS`，例如：
+
+```conf
+BBLAYERS ?= " \
+  /path/to/poky/meta \
+  /path/to/poky/meta-poky \
+  /path/to/openbmc/meta-phosphor \
+  /path/to/openbmc/meta-aspeed \
+  /path/to/meta-myboard \
+"
+```
+
+你可以把它理解成這次建置的「資料來源清單」。
+
+`bblayers.conf` 主要提供的資訊包括：
+
+- 要載入哪些 layer
+- 每個 layer 的實體路徑
+- BitBake 可以去哪裡找 `.bb` recipes
+- BitBake 可以去哪裡找 `.bbappend`
+- 哪些 machine、distro、class、patch 與設定片段有機會被看到
+
+它最實際的作用是：
+
+- 決定哪些 recipe 看得見
+- 決定哪些 `.bbappend` 會生效
+- 決定你的自家 board layer 是否真的有被納入
+- 決定 `MACHINE` 對應內容能不能被找到
+
+如果缺 layer，常見症狀是：
+
+- 找不到 recipe
+- 找不到 machine 設定
+- append 沒有生效
+
+可以用一句話記：
+
+- `bblayers.conf`：告訴 BitBake「去哪裡找東西」
+- `local.conf`：告訴 BitBake「這次怎麼 build」
+
+### 3.3 `local.conf`
+
+`build/conf/local.conf` 比較像這台 build machine 的在地設定。最常看的幾項：
+
+| 參數 | 用途 |
+|:--|:--|
+| `MACHINE` | 指定這次要替哪一塊板子建置，例如選哪份 machine 設定、device tree、kernel 設定與 image 組合 |
+| `DL_DIR` | 指定下載快取目錄，集中存放 `do_fetch` 抓回來的原始碼、壓縮檔與 git mirror，避免每次換 build 目錄都重新下載 |
+| `SSTATE_DIR` | 指定 shared state cache 目錄，保存可重用的中間建置成果，讓沒變動的 recipe 不必每次從頭重編 |
+| `BB_NUMBER_THREADS` | 控制 BitBake 可同時執行多少個 task，影響整體平行建置效率 |
+| `PARALLEL_MAKE` | 傳給底層編譯器的平行編譯參數，例如 `make -j` 的行為，影響單一 recipe 的編譯速度 |
+
+其中 `DL_DIR` 與 `SSTATE_DIR` 特別重要，它們不是編譯指令，而是 Yocto 建置時最關鍵的兩個快取目錄：
+
+- `DL_DIR` 比較像原料倉庫，負責保存下載回來的 source
+- `SSTATE_DIR` 比較像半成品倉庫，負責保存可重用的建置成果
+
+如果這兩個目錄沒有妥善規劃，常見結果就是：
+
+- 每次重建 build 目錄都重新下載大量原始碼
+- 改一小部分內容卻要重等很久
+- 不同 build 目錄或不同使用者之間無法共享快取成果
+
+### 3.4 常見修改入口
+
+OpenBMC 專案裡，常見的客製方式不是直接改上游，而是：
+
+- 在自己的 layer 新增 recipe
+- 寫 `.bbappend`
+- 加 patch
+- 覆寫 device tree
+- 調整 kernel config
+
+例如：
+
+```text
+meta-myboard/
+  recipes-kernel/
+    linux/
+      linux-aspeed_%.bbappend
+      files/
+        0001-my-fix.patch
+        ast2700-myboard.dts
+```
+
+---
+
+## 4. AST2700 的異質交叉編譯觀念
+
+AST2700 不是「三顆 CPU 就要手動編三次」的意思，而是「建置系統要替不同 CPU 類型安排不同 toolchain 與產物」。
+
+### 4.1 核心觀念
+
+- `Cortex-A35`：64-bit，通常跑 Linux
+- `Cortex-A32`：32-bit，常見用於 RTOS 或 bare-metal 任務
+
+所以會牽涉不同交叉編譯器，例如：
+
+- `aarch64-linux-gnu-gcc`
+- `arm-none-eabi-gcc`
+
+### 4.2 不是你手動編三次
+
+通常情況下，你仍然只下類似一條主命令：
+
+```bash
+bitbake obmc-phosphor-image
+```
+
+接著由 Yocto/BitBake 自動安排：
+
+```mermaid
+flowchart TD
+    A[bitbake obmc-phosphor-image] --> B[A32 韌體建置]
+    A --> C[A35 Linux 與 OpenBMC 建置]
+    B --> D[A32 產物<br/>elf bin]
+    C --> E[A35 產物<br/>kernel rootfs services]
+    D --> F[整合打包]
+    E --> F
+    F --> G[最終燒錄 image]
+```
+
+### 4.3 開機後怎麼接上
+
+典型流程是：
+
+1. A35 端 Linux 先開機
+2. Linux 從檔案系統找 A32 韌體
+3. 透過 `remoteproc` 載入到指定記憶體
+4. 啟動 A32 核心執行對應工作
+
+所以「多核心、多架構」在建置時是多套產物，在使用者操作上通常還是一套整合流程。
+
+---
+
+## 5. QEMU 模擬與除錯實務
+
+QEMU 常拿來先驗證 boot flow、console、服務啟動與基本行為。
+
+### 基本流程
+
+1. 啟動 QEMU 後，觀察 `char device redirected to /dev/pts/X`
+2. 用 `tio /dev/pts/X` 連上虛擬序列埠
+3. 若 QEMU 停在等待狀態，在 QEMU 視窗輸入 `c`
+4. 使用 `root / 0penBmc` 登入
+
+### 適合用 QEMU 先驗證的事
+
+- 開機流程是否正常
+- systemd 服務是否起得來
+- 基本 shell / log 行為
+- 某些 user-space 程式是否能運作
+
+### 不要對 QEMU 期待過高的事
+
+- 真實 SoC 周邊時序
+- 實體 PCIe/I2C/GPIO 細節
+- 板級硬體互動問題
+
+---
+
+## 6. ConfigFS：用檔案系統外觀操作核心
+
+`ConfigFS` 看起來像檔案系統，但它的重點不是存資料，而是把核心物件與控制介面「包裝成目錄和檔案」給使用者操作。
+
+### 6.1 它和 ext4 / NTFS 的差別
+
+| 項目 | ext4 / NTFS | ConfigFS |
+|:--|:--|:--|
+| 主要目的 | 儲存資料 | 操作核心物件 |
+| 資料位置 | 磁碟 | RAM |
+| 重開機後 | 保留 | 消失 |
+| 建立 `mkdir` 的效果 | 建空目錄 | 建立核心中的一個物件 |
+
+### 6.2 用在 PCIe Endpoint 時的理解方式
+
+把 ConfigFS 想成「控制面板」最容易理解：
+
+- `mkdir`：新增一個功能物件
+- `echo ... > vendorid`：改這個物件的屬性
+- `echo 1 > start`：通知核心啟動對應硬體流程
+
+### 6.3 指令背後真正發生的事
+
+```bash
 mkdir /sys/kernel/config/pci_ep/functions/pci_epf_test/func1
-# → 這不是在建空資料夾！
-#   Linux 核心攔截到這個動作後，會在底層呼叫 pci_epf_test 模組的回呼函數，
-#   在系統記憶體中真正分配並實體化出一個「虛擬 PCIe Endpoint Function 物件」。
 ```
 
-#### echo：寫入字元 vs. 設定核心資料結構
+這不是單純建資料夾，而是要求 kernel 建立一個 PCIe EP function 物件。
 
 ```bash
-# 在 NTFS / ext4 下
-echo "1987" > file.txt
-# → 把四個字元寫進硬碟磁區保存。
-
-# 在 ConfigFS 下
 echo 0x1987 > vendorid
-# → 觸發核心執行一段程式碼，
-#   把剛剛生出來的那個虛擬 PCIe 裝置結構體裡的 vendor_id 變數賦值為 0x1987。
-
-echo 1 > start
-# → 觸發核心呼叫 Skeleton EPC driver 裡的 start() callback 函數，
-#   讓 PCIe EP 硬體開始實際運作。
 ```
 
-#### 整體對照
+這不是寫文字到普通檔案，而是在改核心裡裝置結構的欄位值。
 
-| Shell 指令 | 在實體 FS 的效果 | 在 ConfigFS 的效果 |
-|:--|:--|:--|
-| `mkdir func1` | 建立空目錄 | **實體化一個 PCIe EPF 核心物件** |
-| `echo 0x1987 > vendorid` | 寫入字串到檔案 | **設定 Vendor ID 到裝置結構體** |
-| `echo 1 > start` | 寫入字元「1」 | **呼叫 EPC driver 的 start() 啟動硬體** |
-| `rmdir func1` | 刪除空目錄 | **釋放 PCIe EPF 物件、停止 EP 功能** |
+```bash
+echo 1 > start
+```
 
-> [!NOTE]
-> 你可以把 ConfigFS 想像成一台機器（Linux 核心）的「**控制面板**」：上面的每一個「資料夾」都是一個「可擴充的模組插槽」，每一個「檔案」都是一個「旋鈕或開關」。我們只是借用了「檔案系統」這層外皮，達到設定底層系統與硬體的目的——這正是 AST2700 能夠在不燒錄任何韌體的情況下，透過幾行 Shell 指令就讓 Host 看見一張全新虛擬 PCIe 裝置的根本原因。
+這通常會觸發核心 callback，讓 EP 控制器真的開始工作。
+
+### 6.4 開發上要記住的一句話
+
+ConfigFS 的操作表面上像檔案 IO，本質上其實是在「呼叫核心邏輯」。
 
 ---
 
-## 四、 Kconfig 與 Makefile 的協作關係
+## 7. Kconfig 與 Makefile 的協作關係
 
-Linux 核心原始碼目錄下的各個子資料夾中都散佈著 `Kconfig` 檔案。當開發者或系統管理員準備編譯核心（例如執行 `make menuconfig`）時，建構系統就會收集這些分散的 `Kconfig`，組合出龐大且階層分明的選單介面，讓使用者可以輕鬆勾選想要納入的硬體驅動或系統功能。
+Linux 核心與很多 OpenBMC 底層元件的建置，都依賴 `Kconfig` 與 `Makefile` 的組合。
 
-在 Linux Kernel (包含 OpenBMC 底層) 的編譯系統中，`Kconfig` 與 `Makefile` 扮演著不同的角色，我們可以將其比喻為「點餐系統」與「廚房」：
+### 最簡單的理解
 
-1. **`Kconfig` (菜單)**：定義了有哪些功能（菜色）可以開啟、模組化或關閉，以及它們之間的相依性。
-2. **`make menuconfig` (點餐過程)**：讀取 `Kconfig` 產生互動式圖形/文字介面，讓開發者勾選需要的功能。
-3. **`.config` (訂單)**：點餐完成後，系統會生成這個隱藏檔案，記錄所有的設定值（例如 `CONFIG_MCTP=y`）。
-4. **`Makefile` (廚房)**：`Makefile` 程式碼本身通常不需要修改，它會去讀取 `.config` (訂單) 的內容，並根據裡面的變數 (如 `obj-$(CONFIG_MCTP)`) 來決定要編譯哪些 `.c` 原始碼檔案成 `.o` 或是 `.ko` 核心模組。
+- `Kconfig`：定義有哪些功能可選、彼此相依怎麼算
+- `make menuconfig`：提供互動式設定介面
+- `.config`：最後的設定結果
+- `Makefile`：依據 `.config` 決定哪些檔案要編譯
 
-**總結**：`Kconfig` 負責提供設定介面並產出 `.config` 訂單，而 `Makefile` 負責根據訂單精準執行編譯，這種設計讓超級龐大的專案也能完美解耦。
+### 可以把它想成
 
+| 元件 | 比喻 |
+|:--|:--|
+| `Kconfig` | 菜單 |
+| `make menuconfig` | 點餐過程 |
+| `.config` | 訂單 |
+| `Makefile` | 廚房照單出菜 |
 
+### 實際關係
 
+如果某功能在 `.config` 裡是：
+
+```text
+CONFIG_MCTP=y
+```
+
+那對應 `Makefile` 可能會有：
+
+```make
+obj-$(CONFIG_MCTP) += mctp.o
+```
+
+意思是：只有在這個功能被打開時，`mctp.o` 才會被納入編譯。
+
+---
+
+## 速記總結
+
+- `Yocto` 是建置平台，`BitBake` 是任務引擎。
+- OpenBMC 的建置不是單編程式，而是整個韌體映像的組裝流程。
+- AST2700 屬於異質多核心平台，但通常仍由同一套建置流程統一產出。
+- `DL_DIR` 和 `SSTATE_DIR` 決定你是在高效率開發，還是在反覆重煉地獄。
+- `ConfigFS` 看似檔案系統，實際上是核心控制介面。
+- `Kconfig` 決定能選什麼，`Makefile` 決定真的編什麼。
