@@ -4,7 +4,18 @@
 這份筆記用來建立 Linux kernel 的整體觀念，先從分層架構看懂核心在做什麼，再逐步深入到記憶體管理、行程排程、裝置驅動、檔案系統與網路子系統。
 </div>
 
+## 章節目錄
+
+- [第一章：Linux kernel 概念上分做哪幾層？](#chapter-1)
+- [1.5 初學者可以先怎麼記](#chapter-1-5)
+- [第二章：先看 Driver Layer 在做什麼](#chapter-2)
+- [第三章：Driver 常用工具與 DMA 基礎](#chapter-3)
+- [第四章：Linux networking stack 裡的 Socket Buffer（sk_buff）](#chapter-4)
+- [第五章：Linux kernel 的 interrupt / IRQ](#chapter-5)
+
 ---
+
+<a id="chapter-1"></a>
 
 ## 第一章：Linux kernel 概念上分做哪幾層？
 
@@ -182,6 +193,8 @@ kernel 本身不直接「憑空」完成工作，最終還是要透過 driver �
 
 ---
 
+<a id="chapter-1-5"></a>
+
 ## 1.5 初學者可以先怎麼記
 
 先記住下面這個方向就很夠用了：
@@ -198,6 +211,8 @@ Linux kernel 可以概念性看成「系統呼叫介面層 -> 核心子系統層
 </div>
 
 ---
+
+<a id="chapter-2"></a>
 
 ## 第二章：先看 Driver Layer 在做什麼
 
@@ -818,6 +833,8 @@ Driver Layer 是 Linux kernel 裡最貼近硬體、但又必須同時理解 kern
 
 ---
 
+<a id="chapter-3"></a>
+
 ## 第三章：Driver 常用工具與 DMA 基礎
 
 <div style="background:#fff4e8; border-left: 4px solid #f0a35e; padding: 10px 14px; border-radius: 6px;">
@@ -1231,3 +1248,1309 @@ if (!priv)
 - `kmalloc()`：配置一塊一般記憶體
 - `kzalloc()`：配置後順便清成 0
 - `devm_kzalloc()`：掛在 `dev` 生命周期上，之後由 managed resource 幫忙回收
+
+---
+
+<a id="chapter-4"></a>
+
+## 第四章：Linux networking stack 裡的 Socket Buffer（sk_buff）
+
+<div style="background:#eaf4ff; border-left: 4px solid #5aa9e6; padding: 10px 14px; border-radius: 6px;">
+這份筆記整理 Linux kernel networking 裡的 <b>Socket Buffer</b>，也就是常看到的 <code>sk_buff</code> 與 <code>skb</code>。它不是單純的一塊封包資料，而是 kernel 用來描述、搬運、修改與轉送封包的核心容器。
+</div>
+
+---
+
+### 4.1 Socket Buffer 是什麼？
+
+在 Linux kernel 網路子系統裡，封包從 NIC 收進來、經過 protocol stack 往上走，或從 socket 往下送到 driver，幾乎都會圍繞著 `struct sk_buff` 在移動。
+
+可以先把它想成：
+
+- **packet data 的載體**
+- **packet metadata 的容器**
+- **network stack 各層共同操作的物件**
+
+`skb` 不只放資料本體，還會記錄很多上下文，例如：
+
+- 這是哪個 protocol 的封包
+- L2 / L3 / L4 header 在哪裡
+- 目前有效資料的範圍在哪裡
+- 這個封包要送去哪個 net device
+- checksum、GSO、VLAN、timestamp 等狀態
+
+<div style="background:#e8f7e8; border-left: 4px solid #6bbf73; padding: 10px 14px; border-radius: 6px;">
+<code>sk_buff</code> 是 Linux kernel networking stack 用來表示「一個封包及其相關狀態」的核心資料結構。
+</div>
+
+---
+
+### 4.2 `sk_buff` 在整體路徑上的角色
+
+#### 4.2.1 RX 路徑
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "20px"}}}%%
+flowchart LR
+    A[NIC Hardware] --> B[Driver RX]
+    B --> C[Build or Fill skb]
+    C --> D[netif_receive_skb or napi_gro_receive]
+    D --> E[L2 Processing]
+    E --> F[IP Layer]
+    F --> G[TCP or UDP]
+    G --> H[Socket]
+    H --> I[User Space recv]
+```
+
+driver 收到封包後，通常會：
+
+- 準備或回收 RX buffer
+- 把收到的資料掛到 `skb`
+  常見會看到：`netdev_alloc_skb()`、`build_skb()`、`napi_alloc_skb()`、`skb_put()`、`skb_put_data()`
+- 設定長度、protocol、checksum 狀態
+  常見會看到：`skb_put()` 或 `skb_put_data()` 增加有效長度，`skb->protocol = ...`，以及 `skb->ip_summed = ...`
+- 把 `skb` 往 networking stack 交上去
+  常見會看到：`netif_rx()`、`netif_receive_skb()`、`napi_gro_receive()`
+
+RX 常見其實有兩種做法：
+
+1. **copy**
+   原始資料先放在 driver 自己的 RX buffer，再複製到新的 `skb`
+2. **不 copy / attach / reuse**
+   讓整個 `skb` 去描述並使用那塊既有 buffer，例如 `build_skb()` 這類思路
+
+所以不是所有 RX 都一定會 copy。像前面提到的 `mctp_pcie_vdm_receive_packet()` 就是 copy 型；高效能網卡 driver 則常會盡量減少 copy。
+
+#### 4.2.2 TX 路徑
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "20px"}}}%%
+flowchart LR
+    A[User Space send] --> B[Socket Layer]
+    B --> C[TCP or UDP]
+    C --> D[IP Layer]
+    D --> E[qdisc or netdev queue]
+    E --> F[Driver TX]
+    F --> G[NIC Hardware]
+```
+
+在這條路上，kernel 會建立或修改 `skb`，逐層把 header 填進去，最後交給 driver 送出。
+
+driver 在 TX 路徑上常見工作包括：
+
+- 從上層收到 `skb`
+- 讀取 `skb` 裡的資料長度與 header 資訊
+- 視需要往前補 transport 或 link header
+  常見會看到：`skb_push()`
+- 處理 checksum offload、TSO、GSO 等需求
+- 把資料 map 成 DMA 可用格式
+- 通知 NIC 開始送出
+- 送完後回收對應資源
+
+<div style="background:#e8f7e8; border-left: 4px solid #6bbf73; padding: 10px 14px; border-radius: 6px;">
+TX 和 RX 雖然都會用到 <code>struct sk_buff</code>，但兩邊的工作方向不同：RX 著重把收到的資料整理成 <code>skb</code> 交給上層；TX 著重把上層的 <code>skb</code> 加工後交給硬體，因此常操作的欄位與 helper function 也不完全一樣。
+</div>
+
+---
+
+### 4.3 先用直覺理解 `skb` 長什麼樣
+
+雖然 `struct sk_buff` 本身欄位很多，但初學時先抓住兩件事就很夠：
+
+1. **`skb` 本體是描述物件**
+2. **`skb` 本體主要是描述資訊，封包內容則由其中的指標去定位 data buffer**
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "20px"}}}%%
+flowchart TD
+    A["struct sk_buff<br/>len / data_len<br/>protocol<br/>dev<br/>mac_header<br/>network_header<br/>transport_header<br/>head / data / tail / end"] --> B["packet buffer<br/>headroom | Ethernet | IP | TCP/UDP | payload | tailroom"]
+```
+
+<table>
+  <thead>
+    <tr>
+      <th>欄位</th>
+      <th>直覺意思</th>
+      <th>初學時怎麼記</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>head</code></td>
+      <td>整塊 data buffer 的起點</td>
+      <td>這塊 packet buffer 從哪裡開始</td>
+    </tr>
+    <tr>
+      <td><code>data</code></td>
+      <td>目前有效資料的起點</td>
+      <td>真正要解析的封包從哪裡開始；前面若有空間就是 headroom</td>
+    </tr>
+    <tr>
+      <td><code>tail</code></td>
+      <td>目前有效資料的結尾後一格</td>
+      <td><code>data</code> 到 <code>tail</code> 之間就是有效資料</td>
+    </tr>
+    <tr>
+      <td><code>end</code></td>
+      <td>整塊 data buffer 的結尾</td>
+      <td>這塊 buffer 到哪裡為止</td>
+    </tr>
+    <tr>
+      <td><code>len</code></td>
+      <td>目前這個 <code>skb</code> 代表的資料總長度</td>
+      <td>這包封包目前有多長</td>
+    </tr>
+  </tbody>
+</table>
+
+---
+
+### 4.4 什麼是 headroom 和 tailroom？
+
+這是 `skb` 很重要的一塊。
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "20px"}}}%%
+flowchart LR
+    A[head] --> B[headroom]
+    B --> C[valid data]
+    C --> D[tailroom]
+    D --> E[end]
+    F[data points here] --> C
+    G[tail stops here] --> C
+```
+
+#### 4.4.1 headroom
+
+`data` 前面預留但目前還沒用到的空間。
+
+它很有用，因為封包在往下走時，常常需要在前面再補 header，例如：
+
+- TCP payload 往下補 IP header
+- IP packet 往下補 Ethernet header
+- tunnel 或 encapsulation 再往前多推一層 header
+
+這時如果前面有 headroom，就能直接把 `data` 往前移並填內容，不用每次都重配整塊記憶體。
+
+RX 時也常會刻意設定 headroom。driver 收到封包後，可能不是讓 `data`
+直接指向 buffer 最前面，而是先預留一小段空間，讓後續 stack 若需要補齊
+alignment、補 metadata，或重新塞回某層 header 時比較方便。
+
+常見概念像這樣：
+
+```c
+skb = netdev_alloc_skb(dev, rx_len + NET_IP_ALIGN);
+skb_reserve(skb, NET_IP_ALIGN);
+memcpy(skb_put(skb, rx_len), rx_buf, rx_len);
+```
+
+這裡 `skb_reserve()` 會把 `data` 和 `tail` 一起往後移，前面空出來的地方就是
+headroom。接著 `skb_put()` 再把 `tail` 往後推，表示真正收到的封包資料長度。
+
+如果是比較高效能的 RX path，driver 也可能用 `build_skb()`、page pool 或 DMA
+buffer 直接包成 `skb`。概念仍然類似：`head` 指向整塊可用 buffer 的起點，
+`data` 會被調到有效封包資料開始的位置，`data` 前面留下的空間就是 headroom。
+
+#### 4.4.2 tailroom
+
+`tail` 後面剩餘但尚未使用的空間。
+
+它常用來：
+
+- 在尾端追加 payload
+- 加入某些 trailer
+- 組封包時逐步往後長資料
+
+RX 時，tailroom 通常來自「配置的 buffer 比實際收到的封包長」。例如 driver
+可能配置一塊 2048 bytes 的 RX buffer，但這次硬體只收到 128 bytes：
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "18px"}}}%%
+flowchart LR
+    A[headroom] --> B[received packet 128 bytes]
+    B --> C[unused space]
+    D[data] --> B
+    E[tail] --> C
+    F[end] --> C
+```
+
+driver 會用實際收到的長度把 `tail` 設到有效資料結尾，例如透過 `skb_put(skb, len)`。
+`tail` 到 `end` 之間尚未使用的空間，就是 tailroom。
+
+所以 RX 時可以這樣記：
+
+- `headroom`：有效封包前面保留的空間，常為了 alignment 或之後可能補 header
+- `tailroom`：有效封包後面還沒用到的空間，常是因為 RX buffer 配得比實際封包大
+- `len`：這次 `skb` 目前代表的有效資料長度，不等於整塊 RX buffer 大小
+
+---
+
+### 4.5 常見操作在做什麼？
+
+先抓住一個重點：這些 helper 大多不是在「解析封包」，而是在移動
+`data` 或 `tail`，讓 `skb` 知道目前哪一段才算有效資料。
+
+可以先用這張速記表：
+
+<table>
+  <thead>
+    <tr>
+      <th>helper</th>
+      <th>移動誰</th>
+      <th>效果</th>
+      <th>常見用途</th>
+      <th>補充</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>skb_put()</code></td>
+      <td><code>tail</code> 往後</td>
+      <td>有效資料變長</td>
+      <td>RX 放入收到的資料、尾端追加資料</td>
+      <td>常見寫法是 <code>memcpy(skb_put(skb, len), rx_buf, len)</code>；<code>skb_put()</code> 回傳新增空間的起點</td>
+    </tr>
+    <tr>
+      <td><code>skb_push()</code></td>
+      <td><code>data</code> 往前</td>
+      <td>前面多一段有效資料</td>
+      <td>往前補 header</td>
+      <td>常見於 TX，例如 payload 前面補 IP header 或 Ethernet header</td>
+    </tr>
+    <tr>
+      <td><code>skb_pull()</code></td>
+      <td><code>data</code> 往後</td>
+      <td>前面一段不再算有效資料</td>
+      <td>吃掉或跳過 header</td>
+      <td>常見於 RX 解析，例如看完 Ethernet header 後，讓 <code>data</code> 指到下一層 header 或 payload</td>
+    </tr>
+    <tr>
+      <td><code>skb_reserve()</code></td>
+      <td><code>data</code> 和 <code>tail</code> 一起往後</td>
+      <td>先空出 headroom</td>
+      <td>剛配置 skb 後先預留前方空間</td>
+      <td>不會增加有效資料長度；通常接著再用 <code>skb_put()</code> 放入真正資料</td>
+    </tr>
+  </tbody>
+</table>
+
+---
+
+### 4.6 header pointer 為什麼重要？
+
+network stack 不只要知道「資料在哪」，還要知道各層 header 在哪。
+
+常見概念有：
+
+- `mac_header`
+- `network_header`
+- `transport_header`
+
+對應大致是：
+
+- MAC header: Ethernet header
+- Network header: IPv4 / IPv6 header
+- Transport header: TCP / UDP header
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "20px"}}}%%
+flowchart LR
+    A[Ethernet] --> B[IP]
+    B --> C[TCP]
+    C --> D[Payload]
+    E[mac header] --> A
+    F[network header] --> B
+    G[transport header] --> C
+```
+
+這讓 kernel 可以很快找到對應的 header 去做：
+
+- protocol parsing
+- routing decision
+- checksum handling
+- port 或 address extraction
+- packet rewrite
+
+---
+
+### 4.7 `skb` 不一定只是一整塊連續 payload
+
+初學時很容易以為一個 `skb` 就是一塊完整連續的封包資料，但實際上 Linux 為了效率，常常不會這麼單純。
+
+#### 4.7.1 linear data
+
+最前面的主要資料區可以是 linear 的，也就是可以直接連續存取。
+
+#### 4.7.2 fragmented data
+
+有些資料可能放在 page fragments 或其他分散位置，由 `skb` 去描述它們。
+
+這樣做的目的是：
+
+- 減少 copy
+- 配合 DMA 或 page-based buffer
+- 提高大封包處理效率
+
+---
+
+### 4.8 MCTP 其實也使用 `skb`
+
+很多人一開始會以為 `skb` 主要是給 Ethernet、IP、TCP、UDP 用的，但其實不是。只要是走 Linux kernel networking stack 的封包型協定，通常就會沿用 `sk_buff` 這套模型，**MCTP 也是其中之一**。
+
+
+
+#### 4.8.1 為什麼 socket-MCTP 也會用 `skb`？
+
+原因其實和 TCP/IP 很像：
+
+- kernel 需要有統一的封包容器
+- 需要描述 packet data 與 packet metadata
+- 需要能在 netdev、protocol stack、socket 之間傳遞
+
+所以 MCTP 只要進入 Linux networking stack，就不會自己再發明一套完全不同的 packet object，而是沿用 `skb`。
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "20px"}}}%%
+flowchart LR
+    A[MCTP packet] --> B[represented as skb]
+    B --> C[enters Linux MCTP stack]
+    C --> D[delivered to AF_MCTP socket]
+```
+
+#### 4.8.2 MCTP RX 時 `skb` 怎麼用？
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "20px"}}}%%
+flowchart LR
+    A[Aspeed MCTP Hardware] --> B[aspeed-mctp.c RX tasklet]
+    B --> C[mctp_pcie_vdm_receive_packet]
+    C --> D[mctp-pcie-vdm.c]
+    D --> E[Build skb]
+    E --> F[Linux MCTP Core]
+    F --> G[AF_MCTP Socket]
+```
+
+從 `skb` 角度看，重點是：
+
+- 硬體先收到 PCIe VDM 上的 MCTP packet
+- driver 先把 raw packet 取出來
+- generic `mctp-pcie-vdm` transport 會把這包資料轉成 `skb`
+- `skb` 內會帶著這包 MCTP message 的資料與 metadata
+- 然後把 `skb` 往 Linux MCTP networking stack 交上去
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "20px"}}}%%
+flowchart LR
+    A[raw MCTP packet] --> B[wrap or build skb]
+    B --> C[hand skb to MCTP stack]
+    C --> D[socket receives message]
+```
+
+實際上，`mctp_pcie_vdm_receive_packet()` 這段 code 就是在做這件事：
+
+```c
+int mctp_pcie_vdm_receive_packet(struct net_device *ndev)
+{
+	struct mctp_pcie_vdm_dev *mdev;
+	struct mctp_pcie_vdm_hdr *hdr;
+	struct mctp_skb_cb *cb;
+	struct sk_buff *skb;
+	unsigned int payload_len;
+	size_t len = 0;
+	void *data = NULL;
+	int rc;
+
+	if (!ndev)
+		return -EINVAL;
+
+	mdev = netdev_priv(ndev);
+	rc = mdev->ops->recv_packet(mdev->dev, &data, &len);
+	if (rc)
+		return rc;
+
+	rc = mctp_pcie_vdm_validate_packet(ndev, data, len, &payload_len);
+	if (rc)
+		goto drop;
+
+	hdr = data;
+
+	skb = netdev_alloc_skb(ndev, payload_len);
+	if (!skb) {
+		rc = -ENOMEM;
+		goto drop;
+	}
+
+	skb_put_data(skb, (u8 *)data + sizeof(*hdr), payload_len);
+	skb->protocol = htons(ETH_P_MCTP);
+	skb_reset_network_header(skb);
+
+	cb = __mctp_cb(skb);
+	cb->halen = 0;
+
+	dev_dstats_rx_add(ndev, payload_len);
+	netif_rx(skb);
+
+	mdev->ops->free_packet(mdev->dev, data);
+
+	return 0;
+
+drop:
+	dev_dstats_rx_dropped(ndev);
+	if (data)
+		mdev->ops->free_packet(mdev->dev, data);
+
+	return rc;
+}
+```
+
+可以把這段實作拆成下面幾步看：
+
+1. `recv_packet()` 先從下層硬體 driver 拿到一包 raw data
+2. `mctp_pcie_vdm_validate_packet()` 檢查這包是不是合法的 PCIe VDM MCTP packet，並算出真正的 `payload_len`
+3. `hdr = data` 表示這包 raw data 開頭是 PCIe VDM header
+4. `netdev_alloc_skb(ndev, payload_len)` 配一個新的 `skb`
+5. `skb_put_data(skb, (u8 *)data + sizeof(*hdr), payload_len)` 跳過 PCIe VDM header，只把後面的 MCTP payload 複製進 `skb`
+6. `skb->protocol = htons(ETH_P_MCTP)` 告訴上層這是一包 MCTP 封包
+7. `skb_reset_network_header(skb)` 把目前的 `skb->data` 視為 network header 起點
+8. `netif_rx(skb)` 把這包 `skb` 丟進 Linux networking stack
+
+`netif_rx(skb)` 不是直接呼叫某個 MCTP function，而是把 `skb` 交給
+Linux 網路收包流程。後面大致會是：
+
+1. `netif_rx(skb)` 把 `skb` 放進 kernel 的 RX backlog queue
+2. kernel 觸發 `NET_RX_SOFTIRQ`
+3. softirq 之後會跑 network RX 處理流程
+4. kernel 根據 `skb->protocol` 決定這包要交給誰
+5. 如果 `skb->protocol == htons(ETH_P_MCTP)`，就會交給已註冊處理
+   `ETH_P_MCTP` 的 MCTP protocol handler
+
+所以這段 code 可以理解成：driver 先把 PCIe VDM transport header 拆掉，
+再把乾淨的 MCTP packet 包成 `skb`，最後透過 `netif_rx(skb)` 交給
+Linux networking stack，讓 MCTP 那層繼續處理。
+
+這裡最值得注意的是第 5 步：
+
+- 進來的原始資料是 `PCIe VDM header + MCTP packet`
+- 放進 `skb` 的不是整個 PCIe VDM frame
+- 而是 **去掉 `sizeof(*hdr)` 之後的 MCTP payload**
+
+也就是說，這段 code 的設計是：
+
+- PCIe VDM header 在 transport 層先驗證、先拆掉
+- 真正往上交給 MCTP stack 的，是乾淨的 MCTP packet
+
+還有一個 headroom 很關鍵的點：
+
+- 這裡用的是 `netdev_alloc_skb(ndev, payload_len)`
+- 沒有先 `skb_reserve()` 額外預留 PCIe VDM header 空間
+- 所以這條 RX path 的 `skb` 幾乎就是「剛好裝 payload」
+
+這也說明了：
+
+- **TX 路徑** 常比較需要 headroom，因為可能還要往前補 PCIe VDM header
+- **RX 路徑** 常見做法是先把 transport header 拆掉，再把 payload 包成 `skb` 往上送
+
+#### 4.8.3 MCTP TX 時 `skb` 怎麼用？
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "20px"}}}%%
+flowchart LR
+    A[AF_MCTP Socket send] --> B[Linux MCTP Core]
+    B --> C[mctppciX netdev]
+    C --> D[mctp-pcie-vdm.c]
+    D --> E[Read skb and build PCIe VDM header]
+    E --> F[aspeed-mctp.c callback]
+    F --> G[Aspeed MCTP Hardware]
+```
+
+從 `skb` 角度看，流程大致是：
+
+1. user space 透過 `AF_MCTP` socket 送資料
+2. Linux MCTP core 建立或整理對應的 `skb`
+3. route 或 neigh 選到 `mctppciX`
+4. `mctp-pcie-vdm.c` 從 `skb` 取出 MCTP message
+5. transport layer 再補上 PCIe VDM transport header
+6. 之後交給 Aspeed 硬體 driver 做實際送出
+
+#### 4.8.4 對 MCTP 來說，`skb` 裡裝的是什麼？
+
+如果用概念來看，MCTP 的 `skb` 通常承載的是：
+
+- MCTP message data
+- MCTP header 相關內容
+- 對應的 netdev 資訊，例如 `mctppciX`
+- 封包長度、協定狀態與傳遞上下文
+
+而到了 PCIe VDM transport 那層，還會再根據需要：
+
+- 從 `skb` 取 payload
+- 在前面補 PCIe VDM header
+- 交給下層 Aspeed MCTP driver
+
+### 4.9 `skb` 的生命週期怎麼看？
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "20px"}}}%%
+flowchart LR
+    A[allocate or prepare skb] --> B[fill packet data and metadata]
+    B --> C[move through network stack]
+    C --> D[maybe clone queue segment or free]
+```
+
+更具體一點：
+
+1. 建立 `skb` 或把既有 buffer 包裝成 `skb`
+2. 各層更新 header 與 metadata
+3. 在 queue、protocol stack、driver 間傳遞
+4. 最後送出完成，或被 socket 收下，或被丟棄
+5. 資源被釋放或回收
+
+---
+
+### 4.10 初學時最容易搞混的幾件事
+
+#### 4.10.1 `socket` 和 `socket buffer` 不是同一件事
+
+- `socket` 是通訊端抽象
+- `socket buffer` 是封包資料在 kernel 裡移動時常用的容器
+
+#### 4.10.2 `skb` 會在 networking stack 各層流動
+
+`skb` 雖然常出現在 driver 裡，但它不是 driver 專用物件。只要封包進入
+Linux networking stack，後面的 netdev、protocol layer、socket layer 都可能會操作它。
+
+這裡的 stack 不是 CPU 的 call stack，也不是一塊記憶體堆疊；它比較像
+「kernel 裡一層一層處理網路封包的流程」。
+
+可以把 networking stack 想成封包在 kernel 裡經過的一串處理層。
+
+RX 時，封包大致是從硬體往上走：
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "20px"}}}%%
+flowchart LR
+    A[NIC or hardware driver] --> B[netdev layer]
+    B --> C[protocol layer]
+    C --> D[socket layer]
+    D --> E[user space]
+```
+
+TX 時方向相反，資料從 socket 往下走到 driver：
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "20px"}}}%%
+flowchart LR
+    A[user space] --> B[socket layer]
+    B --> C[protocol layer]
+    C --> D[netdev layer]
+    D --> E[NIC or hardware driver]
+```
+
+`skb` 就是在這些層之間被傳來傳去的封包容器。每一層可能會看或修改不同資訊：
+
+<table>
+  <thead>
+    <tr>
+      <th>層次</th>
+      <th>常看什麼</th>
+      <th>可能做什麼</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>driver / netdev</td>
+      <td>實際封包資料、長度、device</td>
+      <td>收包、送包、設定 <code>skb->dev</code>、交給上層</td>
+    </tr>
+    <tr>
+      <td>protocol layer</td>
+      <td>protocol、header 位置、checksum</td>
+      <td>解析 header、決定下一層、更新 metadata</td>
+    </tr>
+    <tr>
+      <td>socket layer</td>
+      <td>payload、來源與目的資訊</td>
+      <td>把資料交給對應 socket，或從 socket 建立要送出的封包</td>
+    </tr>
+  </tbody>
+</table>
+
+所以看到「把 `skb` 交給 networking stack」，意思通常是：driver 不再自己處理這包，
+而是把它交給 kernel 的網路流程，讓後面的 protocol layer 和 socket layer 繼續處理。
+
+#### 4.10.3 `skb` 不是只有 data pointer
+
+真正有價值的是：
+
+- data buffer
+- header 位置資訊
+- protocol metadata
+- device、routing、offload 狀態
+
+---
+
+<a id="chapter-5"></a>
+
+## 第五章：Linux kernel 的 interrupt / IRQ
+
+<div style="background:#eefaf2; border-left: 4px solid #58b77b; padding: 10px 14px; border-radius: 6px;">
+這一章整理 Linux kernel 裡的 interrupt 基本觀念：CPU 為什麼需要中斷、IRQ handler 在做什麼、為什麼又會分成 hard IRQ、softirq、threaded IRQ，以及 driver 實作時哪些事情可以在中斷裡做、哪些不能做。
+</div>
+
+### 5.1 IRQ 這個字到底在講什麼？
+
+在 Linux 裡，你很常同時看到：
+
+- interrupt
+- IRQ
+- interrupt line
+- interrupt handler
+
+它們關係可以先這樣記：
+
+- **interrupt**：整個「硬體通知 CPU」的事件機制
+- **IRQ**：通常是 kernel 裡用來識別某個中斷來源的編號或抽象資源
+- **interrupt handler**：真的被呼叫來處理這個 IRQ 的函式
+
+例如 driver 會註冊：
+
+```c
+request_irq(irq, my_handler, 0, "mydev", dev);
+```
+
+這表示：
+
+- 某個 `irq` 發生時
+- kernel 要呼叫 `my_handler`
+- `dev` 會當成 handler 的 context 傳進去
+
+---
+
+### 5.2 interrupt 從硬體到 driver，大致怎麼走？
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "20px"}}}%%
+flowchart LR
+    A[Hardware event<br/>RX done / DMA done / error] --> B[Interrupt controller]
+    B --> C[CPU enters IRQ exception]
+    C --> D[Kernel generic IRQ layer]
+    D --> E[Driver IRQ handler]
+    E --> F[Wake thread / schedule bottom half / ack device]
+```
+
+實際上，中間細節很多，但學習上先抓這條主線就夠：
+
+1. 裝置發生事件
+2. 裝置把中斷送到 interrupt controller
+3. CPU 收到中斷，進入 kernel 的 IRQ 處理路徑
+4. generic IRQ layer 找到這個 IRQ 對應的 handler
+5. driver 的 handler 被呼叫
+6. handler 做最小必要工作，剩下重工作延後處理
+
+<div style="background:#fff7e8; border-left: 4px solid #f0b35c; padding: 10px 14px; border-radius: 6px;">
+初學時先把 generic IRQ layer 想成「kernel 幫大家統一管理 IRQ 的中介層」就好。driver 通常不直接碰最底層 CPU exception 細節，而是向 Linux IRQ framework 註冊 handler。
+</div>
+
+---
+
+### 5.3 top half 和 bottom half 怎麼理解？
+
+這是學 interrupt 最常見的一組概念。
+
+- **top half**：最先跑的 IRQ handler，重點是快
+- **bottom half**：延後處理剩下工作，重點是把 hard IRQ 做短
+
+可以先這樣想：
+
+```text
+interrupt 來了
+    -> top half 先接住
+       - 看原因
+       - 清狀態
+       - 記錄必要資訊
+       - 排後續工作
+    -> bottom half 再慢慢做比較重的事情
+```
+
+在 Linux 裡，bottom half 不只一種做法，常見包括：
+
+- softirq
+- tasklet
+- workqueue
+- threaded IRQ
+
+它們不是完全同一層概念，但都可以拿來達成「把重工作延後」這件事。
+
+---
+
+### 5.4 hard IRQ、softirq、threaded IRQ 差在哪？
+
+這一節先把幾個名詞分清楚。它們都和 interrupt 後續處理有關，但不是同一種東西。
+
+#### 5.4.1 先用一張表抓差異
+
+| 機制 | 誰觸發第一步 | 誰通常會寫到 | 主要用途 | 可不可以 sleep |
+| --- | --- | --- | --- | --- |
+| hard IRQ | 硬體裝置 | driver 很常寫 | 第一時間接住 interrupt | 不可以 |
+| softirq | kernel code 標記 pending | 多數 driver 不直接寫 | kernel subsystem 的高效率延後處理 | 不可以 |
+| threaded IRQ | 硬體 IRQ 後由 kernel 喚醒 IRQ thread | driver 很常寫 | 把 IRQ 後半段交給 thread | 通常比較可以做複雜事 |
+| tasklet | driver 或 kernel 排程 | 舊 driver 可能看到 | 較舊的 bottom-half 機制 | 不可以 |
+
+最常用的直覺是：
+
+```text
+hard IRQ
+    -> 先接住硬體事件，越短越好
+
+softirq
+    -> kernel subsystem 內部常用的延後處理
+
+threaded IRQ
+    -> driver 把 IRQ 後半段交給 kernel thread
+```
+
+---
+
+#### 5.4.2 hard IRQ：第一時間接住中斷
+
+這是最直接的中斷處理階段。
+
+特徵通常是：
+
+- 跑得很快
+- 不能隨便睡眠
+- 適合做最小必要處理
+
+hard IRQ handler 常做的事情是：
+
+- 確認是不是自己的 IRQ
+- 讀 status register
+- ack / clear / mask interrupt
+- 記錄必要狀態
+- 安排後續處理
+
+---
+
+#### 5.4.3 softirq：kernel 自己排的延後處理
+
+softirq 是 kernel 用來延後做某些工作的機制，常見於：
+
+- network RX/TX
+- timer
+- block I/O 完成路徑
+
+它的重點不是「變成一般 thread」，而是：
+
+- 仍然很靠近核心底層
+- 偏向高效率、大量事件處理
+
+這裡最容易搞混的是「誰觸發 softirq」。
+
+- **觸發硬體中斷的是裝置**
+- **觸發 softirq 的不是硬體，而是 kernel 自己把某個 softirq 標成 pending**
+
+流程可以先這樣想：
+
+```text
+硬體 IRQ 先進來
+    -> hard IRQ handler 跑一小段
+    -> kernel 標記某個 softirq 待處理
+    -> 離開 hard IRQ 後，找合適時機跑 softirq handler
+```
+
+所以 softirq 是 kernel 內部的一種延後執行機制。
+
+---
+
+##### 5.4.3.1 sample：網卡收包時 softirq 怎麼跑？
+
+例如網路收包常見流程可以這樣看。
+
+```text
+NIC 收到封包
+    -> 網卡硬體拉 IRQ
+    -> CPU 進入 hard IRQ handler
+    -> driver/NAPI 先把 RX 事件收下來
+    -> kernel 把 NET_RX_SOFTIRQ 標成 pending
+    -> 離開 hard IRQ
+    -> kernel 執行 NET_RX_SOFTIRQ
+    -> softirq 再去跑較完整的 RX 處理
+```
+
+高層流程圖如下：
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "20px"}}}%%
+flowchart LR
+    A[NIC receives packet] --> B[Hardware raises IRQ]
+    B --> C[Hard IRQ handler]
+    C --> D[napi_schedule or similar]
+    D --> E[NET_RX_SOFTIRQ pending]
+    E --> F[do_softirq or ksoftirqd]
+    F --> G[NAPI poll runs]
+    G --> H[Process many packets]
+```
+
+把這條路拆細一點看：
+
+1. 網卡真的收到封包，這是**硬體事件**
+2. 網卡硬體送出 IRQ，這是**硬體中斷**
+3. CPU 進入 driver 的 hard IRQ handler
+4. handler 通常不會在這裡一包一包慢慢處理全部封包
+5. handler 做 `ack`、`mask interrupt`，並告訴 kernel「這個網卡有 RX 工作要做」
+6. 這一步常會走到 `napi_schedule()` 一類路徑
+7. `napi_schedule()` 背後會把 `NET_RX_SOFTIRQ` 標成 pending
+8. 等 hard IRQ 快結束時，kernel 可能直接呼叫 `do_softirq()`
+9. 如果目前不適合立即跑完，之後也可能由 `ksoftirqd/n` 這種 kernel thread 接手
+10. 接著 `NET_RX_SOFTIRQ` 對應的處理函式開始跑，再去呼叫 NAPI poll，把 backlog 或 ring 裡的多包封包一次處理掉
+
+從「誰觸發」來看，其實分成兩層：
+
+- **第一層硬體 IRQ**：由裝置觸發
+- **第二層 softirq 執行**：由 kernel 在軟體路徑中標記並安排執行
+
+---
+
+##### 5.4.3.2 driver 作者通常會不會自己寫 softirq？
+
+通常不會。
+
+大多數 driver 作者比較常做的是：
+
+- 申請硬體 IRQ：`request_irq()` 或 `request_threaded_irq()`
+- 在 IRQ handler 裡快速處理硬體事件
+- 呼叫某個 kernel subsystem API，把後續工作交出去
+
+真正的 softirq handler 通常是 kernel subsystem 早就註冊好的。以 networking 為例，driver 通常不會自己註冊 `NET_RX_SOFTIRQ`，而是呼叫像：
+
+- `napi_schedule()`
+- `netif_rx()`
+- `napi_gro_receive()`
+
+這些 API 內部再把工作導向 networking stack 的 softirq / NAPI 路徑。
+
+所以可以先這樣記：
+
+```text
+driver 寫的 code
+    -> 接住硬體 IRQ
+    -> 快速處理必要狀態
+    -> 呼叫 framework API
+
+kernel subsystem 做的事
+    -> 標記 softirq pending
+    -> 之後執行對應 softirq handler
+```
+
+也就是說，對一般 driver 來說，重點不是「我要自己寫 softirq」，而是：
+
+- 我現在呼叫的 API 會把工作丟到哪個 context？
+- 後面能不能 sleep？
+- 這條路徑適不適合做重工作？
+
+---
+
+##### 5.4.3.3 softirq 什麼時候真的開始跑？
+
+這也不是固定只有一種情況。常見可以先記兩個：
+
+- **剛離開 hard IRQ 時就順手跑**
+- **如果事情很多或不適合當下跑完，就交給 `ksoftirqd`**
+
+可以把它想成：
+
+```text
+hard IRQ 結束前
+    -> 看看有沒有 pending softirq
+    -> 有的話，可能直接跑一輪 do_softirq()
+    -> 如果太忙、太久、需要讓出 CPU
+    -> 交給 ksoftirqd 繼續跑
+```
+
+`ksoftirqd/n` 是每顆 CPU 上的一個 kernel thread，作用大致是：
+
+- 當 softirq 工作很多
+- 或不適合一直在當前返回路徑裡做完
+- 就由 `ksoftirqd` 幫忙把剩下的 softirq 工作跑掉
+
+所以你有時會看到：
+
+- 某些 softirq 像是「中斷返回時直接處理」
+- 某些又像是「怎麼變成 kernel thread 在跑」
+
+這兩個觀察都可能是對的，因為 softirq 的執行時機本來就可能落在不同路徑。
+
+---
+
+#### 5.4.4 threaded IRQ：driver 常用的 IRQ 後半段 thread
+
+threaded IRQ 是一種把 IRQ handler 拆成兩段的寫法：
+
+- 前半段先快速處理
+- 後半段交給一個 IRQ 專用的 kernel thread 跑
+
+最常見 API 是：
+
+```c
+request_threaded_irq(irq, my_irq_handler, my_thread_fn,
+                     flags, "mydev", dev);
+```
+
+常見理解方式是：
+
+- `my_irq_handler`：hard IRQ context，先做很短的前置處理
+- `my_thread_fn`：IRQ thread context，做比較完整的後續工作
+
+它的運行方式大概是：
+
+```text
+硬體 IRQ 進來
+    -> kernel 呼叫 my_irq_handler()
+    -> handler 確認是自己的 interrupt
+    -> handler 回傳 IRQ_WAKE_THREAD
+    -> kernel 喚醒這個 IRQ 對應的 thread
+    -> thread 跑 my_thread_fn()
+```
+
+所以 threaded IRQ 的重點是：
+
+- **硬體 IRQ 還是由 device 觸發**
+- **IRQ thread 是 kernel 幫這個 IRQ 建立 / 管理的**
+- **你寫的 `thread_fn` 會在那個 IRQ thread 裡執行**
+
+它和 softirq 不一樣。
+
+softirq 比較像是 kernel subsystem 的高效率延後處理機制，例如 networking 的 `NET_RX_SOFTIRQ`。threaded IRQ 則比較像是 driver 自己把「這個 IRQ 的後半段」交給 kernel thread 執行。
+
+driver 常在這些情況選 threaded IRQ：
+
+- IRQ 後半段工作比較多，不想塞在 hard IRQ
+- 後半段可能需要做比較複雜的 register 操作
+- 想讓 interrupt handler 結構清楚一點
+- 需要搭配 `IRQF_ONESHOT` 避免 thread 還沒處理完時同一個 IRQ 又一直進來
+
+這種模式對很多 driver 很實用，因為它兼顧：
+
+- interrupt 響應速度
+- 後續邏輯可讀性
+
+---
+
+#### 5.4.5 tasklet：較舊的 bottom-half 機制
+
+tasklet 也是一種較舊、常見過的 bottom-half 機制。概念上它建立在 softirq 之上，用來把工作延後執行。
+
+學習上可以先知道它的定位就好：
+
+- 它不是一般 thread
+- 它比 workqueue 更接近 interrupt/bottom-half 世界
+- 某些舊 driver 仍然會看到它
+
+<div style="background:#eaf2ff; border-left: 4px solid #6c92e8; padding: 10px 14px; border-radius: 6px;">
+如果你現在是在學新的 driver 架構，通常更值得先熟悉的是「hard IRQ + threaded IRQ」以及網路子系統常見的 softirq / NAPI 路徑。
+</div>
+
+---
+
+### 5.5 哪些 context 可以 sleep，哪些不行？
+
+這一點非常重要。
+
+先粗略記：
+
+- **hard IRQ context**：不要睡眠
+- **softirq / tasklet context**：也不要睡眠
+- **process context / workqueue / threaded IRQ**：通常才比較可能做會睡眠的事
+
+為什麼這麼重要？
+
+因為很多 kernel API 其實隱含可能睡眠，例如：
+
+- 等 mutex
+- 等某個 completion
+- 某些記憶體配置路徑
+- 某些會 block 的 I/O
+
+所以寫 interrupt 相關 code 時，常常第一個要先問自己：
+
+- 我現在是在什麼 context？
+- 這個 API 會不會 sleep？
+
+---
+
+### 5.6 `request_irq()` 和 `request_threaded_irq()` 怎麼看？
+
+#### `request_irq()`
+
+最基本的 IRQ 註冊方式：
+
+```c
+int request_irq(unsigned int irq,
+                irq_handler_t handler,
+                unsigned long flags,
+                const char *name,
+                void *dev);
+```
+
+通常表示：
+
+- 這個 `irq` 發生時，跑 `handler`
+- `name` 方便顯示在 `/proc/interrupts`
+- `dev` 是 handler 的私有 context
+
+handler 長得像：
+
+```c
+irqreturn_t my_irq_handler(int irq, void *data)
+{
+    struct my_dev *mdev = data;
+
+    if (!device_raised_irq(mdev))
+        return IRQ_NONE;
+
+    ack_device_irq(mdev);
+    schedule_work(&mdev->work);
+    return IRQ_HANDLED;
+}
+```
+
+`irqreturn_t` 常見回傳值：
+
+- `IRQ_NONE`：這個中斷不是我造成的
+- `IRQ_HANDLED`：這個中斷我處理了
+
+#### `request_threaded_irq()`
+
+如果你希望把較重工作放到 thread function，可以用：
+
+```c
+int request_threaded_irq(unsigned int irq,
+                         irq_handler_t handler,
+                         irq_handler_t thread_fn,
+                         unsigned long flags,
+                         const char *name,
+                         void *dev);
+```
+
+典型概念：
+
+- `handler` 先快速確認與收斂事件
+- `thread_fn` 再做較完整處理
+
+例如：
+
+```c
+irqreturn_t my_irq_handler(int irq, void *data)
+{
+    struct my_dev *mdev = data;
+
+    if (!device_raised_irq(mdev))
+        return IRQ_NONE;
+
+    mask_device_irq(mdev);
+    return IRQ_WAKE_THREAD;
+}
+
+irqreturn_t my_irq_thread(int irq, void *data)
+{
+    struct my_dev *mdev = data;
+
+    handle_rx_tx(mdev);
+    clear_device_irq(mdev);
+    unmask_device_irq(mdev);
+    return IRQ_HANDLED;
+}
+```
+
+這裡多了一個很重要的回傳值：
+
+- `IRQ_WAKE_THREAD`
+
+意思是：
+
+- 前半段 handler 已確認這個 IRQ 是自己的
+- 請 kernel 喚醒後面的 IRQ thread 去做剩餘工作
+
+---
+
+### 5.7 常見 IRQ flag 可以先認識哪些？
+
+這一節講的是 **硬體 IRQ 註冊時用的 flags**。
+
+也就是你呼叫下面這類 API 時，傳進去的 `flags`：
+
+```c
+request_irq(...)
+request_threaded_irq(...)
+devm_request_irq(...)
+devm_request_threaded_irq(...)
+```
+
+它不是在講 `softirq`。`softirq` 是 kernel 內部的 software deferred handling 機制，不會用這些 `IRQF_*` flags。
+
+初學先知道幾個常看到的就夠了：
+
+- `IRQF_SHARED`
+- `IRQF_ONESHOT`
+- `IRQF_TRIGGER_RISING`
+- `IRQF_TRIGGER_FALLING`
+- `IRQF_TRIGGER_HIGH`
+- `IRQF_TRIGGER_LOW`
+
+可以先分成三類看：
+
+| flag 類型 | 代表意思 | 常見例子 |
+| --- | --- | --- |
+| trigger type | 硬體中斷訊號怎麼觸發 | `IRQF_TRIGGER_RISING`、`IRQF_TRIGGER_LOW` |
+| shared IRQ | 這條 IRQ 可不可以共用 | `IRQF_SHARED` |
+| threaded IRQ 控制 | threaded handler 還沒跑完時怎麼避免重入 | `IRQF_ONESHOT` |
+
+#### trigger type flags
+
+這類是在描述硬體中斷訊號的觸發方式：
+
+- `IRQF_TRIGGER_RISING`：訊號從 low 變 high 時觸發
+- `IRQF_TRIGGER_FALLING`：訊號從 high 變 low 時觸發
+- `IRQF_TRIGGER_HIGH`：訊號維持 high level 時觸發
+- `IRQF_TRIGGER_LOW`：訊號維持 low level 時觸發
+
+這些通常和硬體設計、interrupt controller 設定、Device Tree / ACPI 描述有關。
+
+#### `IRQF_SHARED`：多個 device 共用同一條 IRQ
+
+表示多個裝置可能共用同一條 IRQ。
+
+這時 handler 很重要的一件事就是：
+
+- 先確認是不是自己的中斷
+- 不是就回 `IRQ_NONE`
+
+也就是說，shared IRQ 的 handler 不能假設「IRQ 進來一定是我造成的」。
+
+#### `IRQF_ONESHOT`：常搭配 threaded IRQ
+
+這個 flag 常和 threaded IRQ 一起出現。
+
+可以先理解成：
+
+- 當 IRQ thread 還在處理時
+- 不要讓同一個 IRQ 反覆進來把事情攪亂
+
+實務上很常看到：
+
+```c
+request_threaded_irq(irq, my_irq_handler, my_irq_thread,
+                     IRQF_ONESHOT, "mydev", dev);
+```
+
+這和 `softirq` 也沒有直接關係。它是在控制硬體 IRQ 搭配 threaded handler 時的行為。
+
+---
+
+### 5.8 interrupt context 常搭配哪些同步觀念？
+
+因為 interrupt 可能在任何時間打進來，所以同步問題很常見。
+
+初學先建立這幾個觀念：
+
+- handler 可能和一般 process context 共享資料
+- handler 可能和另一顆 CPU 上的流程並行
+- 需要考慮 lock、atomic、memory ordering
+
+所以你會常看到：
+
+- spinlock
+- `spin_lock_irqsave()` / `spin_unlock_irqrestore()`
+- atomic variable
+- completion
+
+這裡先抓大方向就好：
+
+- 在 interrupt/bottom-half 世界，常見的是 **spinlock**
+- 會睡眠的 lock，例如 mutex，通常不適合直接放在 hard IRQ 裡
+
+---
+
+### 5.9 MSI / MSI-X 和傳統 interrupt 有什麼差別？
+
+很多 PCIe 裝置不一定只靠傳統實體中斷線，也常用：
+
+- MSI
+- MSI-X
+
+它們的直覺理解可以先記成：
+
+- 傳統方式比較像一條實體中斷線在通知 CPU
+- MSI / MSI-X 比較像裝置透過記憶體寫入方式觸發中斷
+
+對 driver 來說，常見差異會表現在：
+
+- IRQ 取得方式不同
+- 可能有多個 vector
+- RX / TX / event queue 可以分開用不同 IRQ
+
+但從「寫 handler」角度看，核心觀念還是一樣：
+
+- 事件來了
+- 確認來源
+- 快速處理
+- 必要時延後重工作
+
+---
+
+### 5.10 網路 driver 為什麼很常提到 NAPI？
+
+如果裝置事件很多，例如網卡不停收包，單純每包都走完整 interrupt 流程，成本會很高。
+
+所以 networking stack 常見做法是：
+
+- interrupt 先通知「有包到了」
+- 先暫時關閉或抑制 RX interrupt
+- 交給 NAPI poll 一次多處理一些封包
+- 清空到某個程度後再重新開啟 interrupt
+
+這背後精神其實和前面一樣：
+
+- interrupt 只做必要通知
+- 大量資料處理不要都塞在最前面的硬中斷裡
+
+---
+
+### 5.11 debug interrupt 問題時，常看哪些東西？
+
+#### `/proc/interrupts`
+
+這是很常用的第一站。
+
+它可以幫你看：
+
+- IRQ 編號
+- 是誰在用
+- 每顆 CPU 收到多少次
+
+```text
+cat /proc/interrupts
+```
+
+如果某個裝置明明應該一直有事件，但計數完全沒動，就要懷疑：
+
+- IRQ 根本沒進來
+- trigger type 錯了
+- driver 沒正確申請 IRQ
+- 硬體沒真的送出 interrupt
+
+#### kernel log
+
+例如：
+
+- `dmesg`
+- `dev_info()`
+- `dev_dbg()`
+- `pr_err()`
+
+很適合確認：
+
+- IRQ 有沒有成功申請
+- handler 有沒有進來
+- status register 顯示什麼
+
