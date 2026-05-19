@@ -7,7 +7,6 @@
 ## 章節目錄
 
 - [第一章：Linux kernel 概念上分做哪幾層？](#chapter-1)
-- [1.5 初學者可以先怎麼記](#chapter-1-5)
 - [第二章：先看 Driver Layer 在做什麼](#chapter-2)
 - [第三章：Driver 常用工具與 DMA 基礎](#chapter-3)
 - [第四章：Linux networking stack 裡的 Socket Buffer（sk_buff）](#chapter-4)
