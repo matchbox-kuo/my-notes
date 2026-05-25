@@ -1,325 +1,494 @@
-# 🚀 AST2700 PCIe 韌體開發與 OpenBMC 實務手冊
+# AST2700 PCIe 韌體開發與 OpenBMC 實務手冊
 
-本文件彙整了關於 OpenBMC 生態系、PCIe 協定細節、以及針對 ASPEED AST2700 晶片進行韌體開發與模擬的核心技術知識。
+本文件整理 OpenBMC、PCIe Endpoint、DC-SCM、Caliptra、LTPI、MCTP/PLDM，以及 AST2700 韌體開發常見設計情境。內容聚焦於架構理解、開發職責與實務判斷。
 
 ---
 
-## 📋 目錄
+## 目錄
 
-- [一、 OpenBMC 與 BMC 基礎概述](#一-openbmc-與-bmc-基礎概述)
-  - [1.1 伺服器管理的兩大通道：In-Band 與 Out-of-Band](#11-伺服器管理的兩大通道in-band-與-out-of-band-oob)
+- [一、OpenBMC 與 BMC 基礎](#一openbmc-與-bmc-基礎)
+  - [1.1 In-Band 與 Out-of-Band 管理](#11-in-band-與-out-of-band-管理)
   - [1.2 OpenBMC 軟體架構](#12-openbmc-軟體架構)
-- [二、 PCIe 協定與韌體開發核心](#二-pcie-協定與韌體開發核心)
-  - [2.1 PCIe 虛擬 USB：xHCI 控制器架構](#21-pcie-虛擬-usb：xhci-控制器架構-usb-over-pcie)
-  - [2.1.5 BMC 上的 Linux 在 EP 架構中扮演的角色](#215-bmc-上的-linux-在-pcie-ep-架構中扮演的角色)
-  - [2.2 實務總結：鍵盤與 USB 存取場景對照表](#22-實務總結鍵盤與-usb-存取場景對照表)
-- [三、 DC-SCM 與 LTPI 技術架構](#三-dc-scm-與-ltpi-技術架構)
+- [二、PCIe 協定與韌體開發核心](#二pcie-協定與韌體開發核心)
+  - [2.1 PCIe 虛擬 USB：xHCI 控制器架構](#21-pcie-虛擬-usbxhci-控制器架構)
+  - [2.2 鍵盤與 USB 存取場景](#22-鍵盤與-usb-存取場景)
+- [三、DC-SCM、Caliptra 與 LTPI 技術架構](#三dc-scmcaliptra-與-ltpi-技術架構)
   - [3.1 DC-SCM 伺服器解耦架構](#31-dc-scm-伺服器解耦架構)
-  - [3.2 LTPI 技術介紹](#32-ltpi-low-pin-count-tunneling-over-pcie-interface)
-  - [3.3 MCTP 協議](#33-mctp-management-component-transport-protocol)
-  - [3.3.2 PLDM 模組化架構與 Type 定義](#332-pldm-模組化架構與-type-定義)
-  - [3.4 DC-SCM 規範與 PCIe 拓樸設計](#34-實務探討dc-scm-規範與-pcie-拓樸設計-以-ssd-管理為例)
-- [四、 GPIO 控制流程](#四-openbmc-在-ast2700dc-scm-架構下的-gpio-控制流程)
+  - [3.2 Caliptra 硬體信任根](#32-caliptra-硬體信任根)
+  - [3.3 LTPI](#33-ltpi-lvds-tunneling-protocol-and-interface)
+  - [3.4 MCTP](#34-mctp-management-component-transport-protocol)
+  - [3.5 DC-SCM 與 PCIe 拓樸設計](#35-dc-scm-與-pcie-拓樸設計)
+- [四、OpenBMC GPIO 控制流程](#四openbmc-gpio-控制流程)
 
 ---
 
-## 📘 一、 OpenBMC 與 BMC 基礎概述
+## 一、OpenBMC 與 BMC 基礎
 
-BMC (基板管理控制器) 是一顆嵌入在伺服器主機板上的小型處理器，獨立於作業系統運行。其主要功能包括遠端控制、環境監控、KVM 重導向及日誌紀錄。
+BMC（Baseboard Management Controller）是伺服器主機板上的獨立管理控制器，不依賴 Host 作業系統運作。主要功能包含遠端電源控制、硬體監控、事件記錄、KVM 重導向與虛擬媒體掛載。
 
-### 1.1 伺服器管理的兩大通道：In-Band 與 Out-of-Band (OOB)
+### 1.1 In-Band 與 Out-of-Band 管理
 
-在伺服器管理與遙測的領域中，通訊路徑分為兩種極難被取代的觀念：
-* **In-Band (頻內管理)**：就是「走大門」。透過伺服器主機的 CPU 與主作業系統 (如 Windows/Linux) 及其主要的網路孔來進行管理行動。
-  * *致命缺點*：只要主機作業系統當機 (藍屏)、主機網路卡故障、或是系統正處於關機狀態，管理員就徹底斷線，無能為力。
-* **Out-of-Band (頻外管理，簡稱 OOB)**：就是「走獨立的專用後門」。這正是 **BMC 存在的最核心價值**。BMC 有自己獨立的微處理器、記憶體、甚至專屬的**管理網路接孔 (Management LAN Port)**。
-  * *絕對優勢*：由於它與主機系統「物理及邏輯上完全脫鉤」，只要伺服器一插上電源線 (即使處於關機的 Standby 狀態)，管理員就能透過 OOB 網路連進 BMC。即使伺服器死機，你依然能遠端強制重開機、查看發生什麼硬體錯誤日誌，或透過虛擬 KVM 掛載 ISO 檔重灌 OS。
+伺服器管理路徑可分為 In-Band 與 Out-of-Band（OOB）兩類：
+
+* **In-Band 管理**：管理流量經由 Host CPU、Host OS 與主機網路介面傳輸。優點是可直接使用作業系統內資源；限制是 Host OS 當機、網路驅動失效或主機關機時，管理能力會受影響。
+* **Out-of-Band 管理**：管理流量經由 BMC 的處理器、記憶體與管理網路介面傳輸。只要系統具備待機電源，管理員即可透過 BMC 執行遠端重啟、硬體事件查詢、KVM 操作或 ISO 掛載。
+
+OOB 是 BMC 的核心價值：即使 Host OS 不可用，仍能保留基本維運能力。
 
 ### 1.2 OpenBMC 軟體架構
 
-OpenBMC 是一個開源專案，旨在為伺服器與基礎設施的 OOB 管理打造標準化、靈活的 Linux 發行版。它整合了以下核心技術：
+OpenBMC 是用於 BMC 的開源 Linux 發行版與管理框架，主要由下列元件組成：
 
-* **Linux Kernel**：核心運作系統。
-* **Yocto Project**：用於建構嵌入式 Linux 的工具鏈與框架。
-* **D-Bus**：系統內部不同服務之間的溝通匯流排。
-  > 💡 **特別注意 (觀念釐清)**：D-Bus **不是**硬體實體線路（如 PCIe、I2C 或 LTPI）。它是一種存在於記憶體中的**軟體通訊機制 (Inter-Process Communication, IPC)**。它就像軟體世界裡的「郵局」或「內部廣播系統」，讓各種獨立的應用服務（如網頁伺服器、GPIO 管理程式）不需要互相綁定，就能透過標準格式傳遞訊息，達到軟體架構極佳的解耦效果。
-* **Web UI**：提供現代化網頁介面。
+* **Linux Kernel**：負責硬體驅動、中斷處理、檔案系統與網路堆疊。
+* **Yocto Project**：負責嵌入式 Linux 映像建構、套件整合與板級客製化。
+* **D-Bus**：OpenBMC 服務之間的 IPC 匯流排，用於服務解耦與狀態發布。
+* **Daemon Layer**：包含感測器、電源、GPIO、MCTP、PLDM、Redfish 等背景服務。
+* **Web UI / Redfish**：提供使用者與自動化系統的管理介面。
+
+> **注意**：D-Bus 是軟體 IPC 機制，不是 PCIe、I2C、LTPI 等硬體匯流排。它負責 OpenBMC 內部服務間的訊息傳遞，不能取代底層硬體協定。
 
 ---
 
-## ⚡ 二、 PCIe 協定與韌體開發核心
+## 二、PCIe 協定與韌體開發核心
 
-### 2.1 PCIe 虛擬 USB：xHCI 控制器架構 (USB over PCIe)
+### 2.1 PCIe 虛擬 USB：xHCI 控制器架構
 
-在進階的伺服器與 DC-SCM 架構中，為了節省 BMC 到主機板 (HPM) 的實體 USB 走線，硬體工程師會採用「透過 PCIe 虛擬化 USB」的策略。這個技術的核心，就是讓 BMC 晶片透過 PCIe 通道假裝自己是一張 **xHCI (eXtensible Host Controller Interface)** 擴充卡。
+在 DC-SCM 或進階伺服器平台中，BMC 可透過 PCIe Endpoint 模擬 USB 控制器，減少 BMC 與 HPM 間的實體 USB 走線。此設計讓 AST2700 以 PCIe 裝置形式呈現為 xHCI（eXtensible Host Controller Interface）控制器。
 
-#### 2.1.1 xHCI 核心觀念
-**xHCI** 是由 Intel 主導制定的 USB 3.0 主機控制器標準規範（向下相容 USB 2.0/1.1）。
-在傳統架構中，xHCI 邏輯通常位於 CPU 的 PCH (南橋) 內。而在「USB over PCIe」的高階架構中，**AST2700 (BMC) 將透過設定自身的 PCIe Endpoint (EP)**，主動向伺服器的 CPU 宣稱：「我這裡有一顆外接的 xHCI USB 控制器」。
+#### 2.1.1 xHCI 核心概念
 
-#### 2.1.2 虛擬 USB 的運作流程
-當伺服器開機，CPU (Host) 啟動 PCIe 硬體枚舉 (Enumeration) 時，這個「指鹿為馬」的過程如下：
+xHCI 是 USB 3.x Host Controller 的標準介面，並可向下相容 USB 2.0/1.1。傳統平台中，xHCI 通常位於 PCH；在 USB over PCIe 架構中，AST2700 會將自身 PCIe Endpoint 設定為 xHCI 類型裝置，使 Host OS 載入標準 xHCI 驅動。
 
-1. **PCIe 認親 (Enumeration)**：CPU 掃描 PCIe Bus，在 AST2700 端點上發現新裝置。讀取其 PCIe Configuration Space 時，會看到 `Class Code` 標示為 `0C0330` (這在國際標準中代表 USB 3.0 xHCI Controller)。
-2. **載入通用驅動**：Host 作業系統 (Windows/Linux) 收到這組 Code，完全不會懷疑，直接掛載系統內建的標準 xHCI 驅動程式。此時，實體上根本沒有任何真正的 USB 電子訊號產生，一切的資料溝通都是透過打散的 PCIe TLP 封包傳輸。
-3. **BMC 軟體餵資料 (Virtual Media / KVM)**：這時 BMC 內部的 Linux 系統，會將管理員在 Web UI 上的滑鼠點擊，或是掛載的 `.iso` 重灌映像檔，轉換成符合 xHCI 規範的資料結構 (如 Transfer Rings)，轉包給 PCIe 控制器拋給 Host CPU。
-4. **Host 完美受騙**：Host CPU 收到了標準的 xHCI 資料流，便以為真的有人在主機的 USB 孔插上了一把實體鍵盤與一台隨身碟（這正是遠端 KVM 與虛擬媒體底層的魔法）。
+#### 2.1.2 虛擬 USB 運作流程
 
-#### 2.1.3 架構優缺點與開發地雷
-* ✅ **絕對優勢 (省腳位與集中傳輸)**：移除了主機板上超容易受雜訊干擾的實體 USB 銅線 (D+/D-)，也省下了 DC-SCM 金手指上的專屬腳位，全部收斂交由高頻寬、自帶強大糾錯機制的 PCIe 高速公路來統一運送。
-* ⚠️ **開發地雷 (ASPM 省電與斷線風險)**：既然 USB 依附在 PCIe 上。只要主機的作業系統因為省電策略啟動了 PCIe 的休眠模式 (如 `ASPM L1` 狀態)，或者發生了瞬斷的 PCIe 鏈路重置 (Link Reset)，Host 的 xHCI 驅動就會立刻判定「USB 擴充卡已被拔除」，導致遠端重建的虛擬光碟或正在移動的滑鼠**瞬間全數斷線**！這是韌體開發工程師處理 PCIe 電源管理時最頭痛的難關，必須特別透過設定去禁用或穩住 ASPM 的狀態。
+1. **PCIe Enumeration**：Host 掃描 PCIe Bus，讀取 AST2700 Endpoint 的 Configuration Space。若 Class Code 設為 `0C0330`，Host 會識別為 USB 3.0 xHCI Controller。
+2. **驅動載入**：Host OS 使用內建 xHCI 驅動程式管理該 PCIe 裝置。此時資料實際上經由 PCIe TLP 傳輸，不經過實體 USB D+/D- 或 SuperSpeed 線路。
+3. **BMC 產生 xHCI 資料結構**：BMC Linux 與使用者空間服務將 KVM 輸入、滑鼠事件或虛擬媒體資料轉換為 xHCI 規範要求的 Transfer Ring、TRB 與事件資料。
+4. **Host 端存取**：Host 端以標準 USB 裝置模型處理資料，因此可將遠端鍵盤、滑鼠或 ISO 映像視為本機 USB 裝置。
 
-#### 2.1.4 BMC 本機「自用」實體 USB 與 NVMe 儲存
-有時候，工程師會在 SCM 板卡 (BMC 所在環境) 上預留實體的 USB 埠或是 M.2 插槽。如果這個設計是為了讓 **BMC 自己專用**（例如：資料中心需要讓 BMC 儲存海量的 Debug 日誌，或是用作 BMC 的多版本快照備份），而完全不需要交給 Host Server 讀取呢？
+#### 2.1.3 架構優點與開發風險
 
-BMC 此時的行為類似一台標準的桌上型電腦：
+* **優點**：減少 DC-SCM 連接器腳位與實體 USB 走線，將 KVM 與虛擬媒體資料收斂至 PCIe 高速通道。
+* **風險**：USB 功能依附 PCIe Link。若 Host 啟用 ASPM L1、觸發 Link Reset，或發生 Endpoint 重新訓練，Host xHCI 驅動可能判定裝置移除，導致 KVM 或虛擬媒體中斷。
+* **開發重點**：需明確定義 PCIe 電源管理策略，確認 ASPM、L1 Substates、Link Reset、PERST# 與驅動恢復流程是否符合平台需求。
 
-1. **若插上實體 USB 隨身碟 (AST2700 擔任 USB Host / xHCI)**：
-   AST2700 晶片內部本身就整合了 **USB Host Controller (其高階控制器亦相容 xHCI 規範)**。此時主機板上的實體 USB 腳位是直接走原生線路進到 AST2700 的 SoC 內。BMC 內部的 Linux 系統會直接掛載標準的 `xhci-hcd` (或 ehci/uhci) 核心驅動程式，主動去「枚舉 Enumeration」這張剛剛插入的隨身碟，並將它掛載到自己的檔案系統裡（如 `/dev/sda`）。
-   > **重點**：整個存取過程完全都是在 SCM 卡內部消化，沒有使用到任何對外的 PCIe 金手指通道，Host Server 也完全不知道這顆隨身碟的存在。
+#### 2.1.4 BMC 本機 USB 與 NVMe 儲存
 
-2. **若插上實體 NVMe SSD (AST2700 擔任 PCIe RC)**：
-   如果是把極高速的 NVMe SSD 插在 SCM 板上的 M.2 槽給 BMC 專用。此時韌體開發者必須將 AST2700 晶片上對應該 M.2 插槽的 PCIe 控制器設定為 **RC (Root Complex)** 模式（自己當老大）。只要鏈路訓練 (Link Training) 成功，BMC 內部的 Linux 就會啟動標準的 NVMe 磁碟驅動，將這顆 SSD 掛載成 `/dev/nvme0n1`，讓 BMC 獲得巨大的儲存吞吐能力。這也完美呼應了「場景二」所提的 Local RC 合規設計。
+若 SCM 板上預留 BMC 專用 USB 埠或 M.2 插槽，該裝置可只供 BMC 使用，不暴露給 Host。
 
-#### 2.1.5 BMC 上的 Linux 在 PCIe EP 架構中扮演的角色
+1. **BMC 使用實體 USB 裝置**
 
-理解了硬體如何呈現 PCIe Endpoint 之後，接著要問的是：**AST2700 上跑的 Linux（及其 User-space 應用程式）在這套架構裡實際上在做什麼？**
+   AST2700 以 USB Host 身分管理本機 USB 埠。BMC Linux 載入 `xhci-hcd` 或對應 USB Host 驅動，完成裝置枚舉後將隨身碟掛載為 `/dev/sdX`。此路徑不經過對外 PCIe 連接器，Host 不會感知該 USB 裝置。
 
-答案是——它扮演的是整張介面卡的「**韌體大腦 (Firmware Brain)**」。它把 PCIe EP 硬體當作對外溝通的橋樑，並負責以下四大職責：
+2. **BMC 使用本機 NVMe SSD**
 
-1. **決定要扮演誰（身分宣告 / EPF 設定）**
+   若 SCM 板上 M.2 插槽供 BMC 專用，AST2700 對應 PCIe 控制器需設定為 RC（Root Complex）。Link Training 成功後，BMC Linux 載入 NVMe 驅動並產生 `/dev/nvme0n1` 等節點，供日誌、備份映像或本機資料儲存使用。
 
-   Linux 透過 **ConfigFS** 介面或專屬的 EP Function（EPF）驅動程式，向 PCIe 控制器寫入 Vendor ID、Device ID、Class Code 等 PCIe Configuration Space 欄位。這一步決定了 Host 端「認為插進來的是什麼裝置」——例如要冒充 xHCI USB 控制器、NVMe 儲存裝置，或是自定義的管理介面卡（`Class Code = FF00h`）。
+#### 2.1.5 Linux 在 PCIe Endpoint 架構中的角色
 
-   > 💡 Linux 核心的 **PCIe EPC（Endpoint Controller）** 框架提供了硬體無關的 API，讓 EPF 驅動程式可以統一操作不同廠商的 EP 控制器暫存器，包括 AST2700 的 PCIe 控制器。
+AST2700 上的 Linux 負責將 PCIe Endpoint 硬體包裝成 Host 可識別的功能裝置。主要工作如下：
 
-2. **配置對外記憶體視窗（BAR 空間設定）**
+1. **設定 Endpoint Function（EPF）**
 
-   Linux 透過 EPC API 設定每個 BAR 對應到 AST2700 內部哪一塊實體記憶體或暫存器空間。Host 端一旦完成 MMIO 映射，只要對該位址執行 Memory Write，訊號就會穿過 PCIe 鏈路抵達 AST2700 的對應記憶體區域。
+   Linux 透過 ConfigFS 或專用 EPF 驅動設定 Vendor ID、Device ID、Class Code、BAR、MSI/MSI-X 等 Configuration Space 欄位。這些欄位決定 Host 端看到的裝置型態，例如 xHCI 控制器、NVMe 裝置或自定義管理介面。
 
-3. **監聽並處理 Host 的寫入事件（中斷處理 / ISR）**
+   Linux Kernel 的 PCIe EPC（Endpoint Controller）框架提供硬體抽象 API，使 EPF 驅動可用一致方式操作不同廠商的 Endpoint 控制器。
 
-   當 Host 端對 BAR 空間執行寫入（例如敲擊 Doorbell 暫存器、推送命令），AST2700 的 EP 硬體會觸發一個內部中斷，通知 BMC 的 CPU：「Host 丟工作過來了！」。BMC Linux 的中斷服務程序（ISR）被喚醒後，讀取 Doorbell 的值或 BAR 中的命令結構，決定下一步動作。
+2. **配置 BAR 空間**
 
-4. **主動推送資料回 Host（DMA 引擎驅動 + MSI-X 通知）**
+   Linux 透過 EPC API 將 BAR 對應至 AST2700 內部記憶體或暫存器區域。Host 完成 MMIO 映射後，可透過 Memory Read/Write 存取該區域。
 
-   當 BMC 端完成運算（例如 KVM 畫面編碼、虛擬磁碟資料讀取），它會操作 EP 控制器的 **DMA 引擎**，主動把結果寫入 Host 端記憶體（由 Host 驅動程式在初始化時提前告知的目標位址）。寫入完成後，再觸發 **MSI-X 中斷**通知 Host 端驅動程式「資料已就位，可以來取」。
+3. **處理 Host 命令**
 
-   ```mermaid
-   sequenceDiagram
-       participant BMC as AST2700 (BMC Linux)
-       participant Host as Host CPU
+   Host 對 BAR 寫入 Doorbell 或命令結構時，Endpoint 硬體觸發中斷。BMC 端 ISR 或驅動工作佇列讀取命令內容，並交由對應服務處理。
 
-       BMC->>Host: ① DMA Write<br/>(把結果推到 Host 記憶體)
-       BMC->>Host: ② MSI-X 中斷 TLP<br/>(通知 Host 驅動取資料)
-       Note right of Host: ③ Host ISR 處理資料
-   ```
+4. **回傳資料與通知 Host**
 
-**總結**：BMC 上的 Linux 將 PCIe EP 硬體視為一個「**對外服務的硬體通道（EPC）**」。它的職責是透過 EPF 驅動設定通道行為、監聽 Host 端透過這個通道傳來的命令，並主動透過 DMA + MSI-X 回應。這正是 AST2700 能夠同時模擬 xHCI 控制器、管理介面、虛擬 NVMe 等多種 PCIe 身分的根本原因。
+   BMC 完成資料準備後，可透過 DMA Engine 將結果寫入 Host 記憶體，再以 MSI/MSI-X 通知 Host 驅動資料已就緒。
 
-### 2.2 實務總結：鍵盤與 USB 存取場景對照表
+```mermaid
+sequenceDiagram
+    participant BMC as AST2700 BMC Linux
+    participant Host as Host CPU / Driver
 
+    Host->>BMC: MMIO Write to BAR / Doorbell
+    BMC->>BMC: ISR reads command
+    BMC->>Host: DMA Write result to Host memory
+    BMC->>Host: MSI-X interrupt notification
+    Host->>Host: Driver handles completion
+```
 
-綜合上述 PCIe 架構與實體線路設計，我們可以用最常見的「鍵盤敲擊」作為例子，歸納在四種不同的維護場景下，訊號到底經歷了什麼轉譯路徑，以及到底誰才是真正的 USB Host：
+**結論**：BMC Linux 負責透過 EPF/EPC 框架定義 Endpoint 行為，處理 Host 命令，並以 DMA 與 MSI-X 完成資料回傳。這是 AST2700 模擬 xHCI、管理介面或其他 PCIe 功能的核心機制。
 
-| 場景 | 鍵盤實體在哪？ | 誰是 USB 主人 (Host)？ | 數據路徑 (核心流程) | 需經過 PCIe 嗎？ |
+### 2.2 鍵盤與 USB 存取場景
+
+下表整理常見維護情境、USB Host 所屬位置與資料路徑：
+
+| 場景 | 鍵盤位置 | USB Host | 主要資料路徑 | 是否經過 PCIe |
 | :--- | :--- | :--- | :--- | :--- |
-| **1. 遠端 KVM (管 HPM)** | 維護者的外部電腦 | HPM (主機 CPU) | 網路 → BMC CPU → vhub 虛擬打包 → **PCIe 隧道** → HPM | **是** |
-| **2. 主機本地 (管 HPM)** | 插在伺服器前方主機埠 | HPM (主機 CPU) | 實體埠 → 主機板 PCH 晶片 xHCI → 主機 CPU | 否 |
-| **3. BMC 遠端 (管 BMC)** | 維護者的外部電腦 | 無 (純網路數據封包) | 網路 → BMC 實體網卡 → AXI 內部匯流排 → BMC CPU | 否 |
-| **4. BMC 本地 (管 BMC)** | 插在伺服器 BMC 專用埠 | BMC (AST2700) | 實體埠 → BMC 內建 xHCI → AXI 內部匯流排 → BMC CPU | 否 |
+| 遠端 KVM 管理 HPM | 維護者電腦 | HPM / Host CPU | 網路 → BMC → 虛擬 xHCI → PCIe → HPM | 是 |
+| 本地鍵盤管理 HPM | 伺服器前面板或主機 USB 埠 | HPM / PCH xHCI | 實體 USB 埠 → PCH xHCI → Host OS | 否 |
+| 遠端管理 BMC | 維護者電腦 | 不涉及 USB Host | 網路 → BMC NIC → BMC Linux | 否 |
+| 本地鍵盤管理 BMC | BMC 專用 USB 埠 | AST2700 xHCI | 實體 USB 埠 → AST2700 xHCI → BMC Linux | 否 |
 
 ---
 
-## 🏗️ 三、 DC-SCM 與 LTPI 技術架構
+## 三、DC-SCM、Caliptra 與 LTPI 技術架構
 
 ### 3.1 DC-SCM 伺服器解耦架構
 
-DC-SCM 是由 OCP (Open Compute Project) 推動的硬體標準，旨在實現伺服器核心的顛覆性「模組化」。在傳統設計中，CPU 與 BMC 總是死死地焊在同一張主機板上；而在這套新標準下，整台伺服器會被物理性地「一分為二」：
+DC-SCM（Data Center Secure Control Module）是 OCP 推動的模組化伺服器管理架構。其目標是將 Host 運算板與管理控制模組分離，降低平台重複設計與驗證成本。
 
-#### 3.1.1 HPM (Host Processor Module - 主處理器模組)
-* **角色定位**：伺服器的「純算力苦力」。這是一塊完全專注於高效能運算的主機板。
-* **主要硬體**：板子上只搭載主角級別的 CPU (Intel/AMD/ARM)、系統記憶體 (DIMM插槽)、以及各種 PCIe 高速擴充槽 (給 GPU 或是高速網卡使用)。
-* **極端特性**：HPM 將所有的系統開機時序控制 (Power Sequence)、風扇溫控、實體資安防護邏輯全部「斷捨離」。換句話說，如果沒有插上 SCM 卡，HPM 本身就是一塊連電源都開不了的廢鐵。
+#### 3.1.1 HPM（Host Processor Module）
 
-#### 3.1.2 SCM (Secure Control Module - 安全控制模組)
-* **角色定位**：伺服器的「大腦中樞與保全室」。將所有管理與防護機制收斂到一張可以抽換的擴充卡上。
-* **主要硬體**：板子上搭載了 BMC 晶片 (如 AST2700)、硬體安全信任根晶片 (Platform RoT)、TPM 模組，以及存放 BMC 運作所需的 SPI Flash 等等。
-* **解耦優勢**：管理模組可與 HPM 完全獨立升級。廠商可以一套 SCM 卡設計，套用到 Intel 或 AMD 兩套不同的 HPM 板子上，省下了海量的 BMC 重複驗證成本。若發生資安漏洞，直接拔出 SCM 卡更新硬體即可。
-* **韌體開發挑戰**：既然 SCM 與 HPM 被實體腰斬切開了，原本用幾根銅線就能控制的開機訊號，現在被迫要走連接兩張板子的金手指。這也是為什麼現代 BMC 極度依賴下節會提到的 **LTPI 隧道** 與 **MCTP 協議** 來進行「跨板溝通」。
+HPM 是伺服器的主要運算模組，通常包含：
 
-#### 3.1.3 DC-SCI (Data Center Server Control Interface)
-嚴格來說，DC-SCM 指的是「模組板卡本身」的設計概念，而 **DC-SCI 則是那座「連接的橋樑」也就是介面標準**：
-* **介面定義**：它統整規範了這塊 SCM 卡「金手指插槽」的物理腳位排列、電氣特性與針腳定義（例如哪幾腳固定走 PCIe、哪幾腳固定走 LTPI 或是 USB）。
-* **重要性**：有了統一的 DC-SCI 接腳定義，不同硬體廠家設計的 SCM 模組跟主機板 (HPM) 之間，才能像樂高積木一樣達成完美的「跨廠牌互相抽換」！
+* CPU、DIMM、PCIe 擴充槽與高速 I/O。
+* Host 開機與作業系統執行所需的核心運算資源。
+* 與 SCM 連接的 DC-SCI 介面。
 
-### 3.2 LTPI (LVDS Tunneling Protocol and Interface)
+HPM 專注於運算與 I/O 擴充；電源時序、平台監控、管理網路與安全控制通常由 SCM 協調。
 
-LTPI 是針對 DC-SCM 2.0 架構設計的關鍵技術，解決了模組間連接器腳位限制的問題。
+#### 3.1.2 SCM（Secure Control Module）
 
-* **運作角色**：充當「低速訊號的多工封裝通道」。它把多種控制訊號封裝後，透過 **LVDS** 實體連線在主機板 (HPM) 與 SCM 之間傳送。
-* **隧道技術 (Tunneling)**：將原本需要大量獨立腳位傳輸的低速訊號打包封裝進少數幾對 LVDS 線路中，並在接收端解開還原。主要支援的隧道通道包含：
-  * **GPIO** (用以傳輸 PWR_GD、Reset 等關鍵控制訊號)
-  * **I2C / I3C** / **UART** / **Post Code** 等低速周邊介面。
-* **技術本質**：它是 DC-SCM 2.0 針對 **LVDS** 連線定義的低速訊號隧道機制，用來取代傳統 **SGPIO** 類做法。與軟體層級的 **D-Bus** 完全不同，LTPI 屬於偏硬體連線與鏈路層級的通訊機制。
-* **韌體開發重點**：
-  * 需處理 AST2700 的 LTPI 控制器暫存器初始化與設定。
-  * 確保 LTPI 連線能與主機板 (HPM) 完成鏈路初始化、訓練與硬體握手 (Handshake)。
+SCM 是可抽換的管理控制模組，通常包含：
 
-### 3.3 MCTP (Management Component Transport Protocol)
+* BMC，例如 ASPEED AST2700。
+* Platform Root of Trust（RoT）、Caliptra、TPM 或安全啟動相關元件。
+* BMC SPI Flash、管理網路與必要低速介面。
 
-MCTP 完全獨立於物理層的特性，使其成為獨立網管模組 (如 DC-SCM) 與伺服器主機 (HPM) 內部元件之間最重要的「通訊共同語言」。
+SCM 的價值在於管理模組可獨立於 HPM 演進。同一套 SCM 設計可支援多種 HPM，降低韌體、硬體與安全驗證成本。
 
-* **核心概念**：MCTP 是由 DMTF 制定的一種通用封包格式協定，專為系統內部各種元件 (BMC、CPU、SmartNIC、NVMe) 之間的網管通訊而設計。
-* **物理層獨立 (Transport Independence)**：MCTP 最強大的優勢在於它「不在乎底層載具是什麼」。相同的網管指令可以透過以下實體層傳遞：
-  * **MCTP over PCIe VDM**：走 PCIe 協定裡的 Vendor Defined Message 包裝傳輸（高速）。
-  * **MCTP over SMBus / I2C**：走傳統的 I2C 接腳傳輸（低速但最普及）。
-  * **MCTP over Serial**：走標準序列埠傳輸。
-* **上層高階應用 (Payload)**：MCTP 只負責當「運貨車」，車上載的網管資料 (Payload) 主要由以下兩種強大協定構成：
-  * **PLDM (Platform Level Data Model)**：主管狀態監控。用來讀取各種溫度感測器讀數、跨板更新韌體 (Firmware Update Payload)、以及查詢 FRU 資訊。
-  * **SPDM (Security Protocol and Data Model)**：主管安全。現代伺服器要求「零信任」，SPDM 負責在通訊前進行硬體的加密憑證交換與身分認證，確保插上去的 SCM 或者感測晶片不是被竄改過的惡意硬體。
+#### 3.1.3 HPM 未開機時仍可運作的介面
 
-#### 3.3.1 MCTP 封包格式解析 (Packet Format)
+在 DC-SCM 架構中，HPM 未開機不代表整台伺服器完全不可管理。只要 SCM/BMC 取得待機電源，OpenBMC 與部分低速管理介面仍可正常運作；但依賴 Host CPU、Host OS 或 PCIe 枚舉的功能，通常要等 HPM 上電後才成立。
 
-考量到實體層面的跨界能力，一個完整的 MCTP 傳輸封包結構宛如「俄羅斯娃娃」，由外到內可分為三個主要區塊：
+| 介面 / 功能 | HPM 未開機時 | 條件與說明 |
+| :--- | :---: | :--- |
+| BMC 管理網路 | 可用 | BMC NIC、OpenBMC、Web UI、Redfish、SSH 可在待機電源下運作。 |
+| OpenBMC 內部服務 | 可用 | D-Bus、sensor daemon、power control daemon、event log 等服務可先啟動。 |
+| 電源控制 / Reset 控制 | 可用 | BMC 可透過本地 GPIO、CPLD、PMIC 或 LTPI 隧道化 GPIO 控制 HPM 上電與重置。 |
+| SCM 本地感測器 | 可用 | 位於 SCM 且有待機電源的 I2C/I3C 感測器可被 BMC 讀取。 |
+| HPM 待機域感測器 | 視設計而定 | 若 HPM 端感測器、I2C mux 或 LTPI receiver 有 standby power，BMC 仍可能讀取部分狀態。 |
+| LTPI 低速隧道 | 視設計而定 | 若 HPM 端 LTPI 邏輯位於待機電源域，可傳遞 GPIO、I2C、UART 或 Post Code 類訊號。 |
+| MCTP over SMBus / I2C | 視設計而定 | 端點若在待機電源域，BMC 可在 Host OS 未啟動時通訊。 |
+| MCTP over PCIe VDM | 通常不可用 | 需要 PCIe link training、Host/PCIe fabric 上電與裝置枚舉。 |
+| PCIe xHCI / 遠端 KVM 給 HPM | 不可用 | Host 尚未枚舉 BMC 模擬的 PCIe xHCI 前，鍵盤、滑鼠與虛擬媒體無法送進 HPM。 |
+| SCM 本地 USB / NVMe | 可用 | 若裝置只接在 SCM 且由 AST2700 自己擔任 Host 或 Root Complex，不依賴 HPM 開機。 |
+
+**判斷原則**：只依賴 BMC、SCM 本地硬體與待機電源的介面通常可用；需要 HPM CPU、Host OS、PCIe link 或 Host 端驅動參與的介面，通常不可用或只能等 HPM 上電後再啟用。
+
+#### 3.1.4 DC-SCI（Data Center Server Control Interface）
+
+DC-SCI 是 HPM 與 SCM 之間的介面規範，定義連接器腳位、電氣特性與訊號用途，例如 PCIe、LTPI、I2C、USB、電源與重置信號。統一介面有助於不同供應商之間維持模組互通性。
+
+### 3.2 Caliptra 硬體信任根
+
+Caliptra 是開放規格的硬體信任根（Hardware Root of Trust）架構，目標是提供可驗證、可量測、可證明的韌體啟動基礎。它通常整合在 SoC、加速器、智慧網卡、儲存控制器或平台安全控制邏輯中，用於建立裝置自身的信任鏈。
+
+在 AST2700 與 DC-SCM 平台脈絡中，Caliptra 可視為 SCM 安全架構的一部分，重點不在取代 BMC，而是提供更底層的可信啟動與證明能力：
+
+* **Secure Boot**：驗證第一階段韌體與後續韌體映像，防止未授權程式碼進入啟動鏈。
+* **Measured Boot**：量測韌體、設定資料與關鍵啟動狀態，產生可追溯的啟動量測紀錄。
+* **Attestation**：以硬體保護的金鑰與量測資料產生證明，讓 BMC、Host 或遠端管理系統確認裝置目前執行的韌體狀態。
+* **Device Identity**：提供裝置身分與金鑰派生基礎，常用於供應鏈驗證、韌體更新授權與零信任管理流程。
+
+Caliptra 與 OpenBMC 的分工如下：
+
+| 元件 | 職責 |
+| :--- | :--- |
+| Caliptra | 建立硬體信任根、驗證韌體、保存量測資料、產生 attestation evidence。 |
+| AST2700 / BMC | 執行平台管理、收集安全狀態、協調韌體更新、透過 Redfish 或其他管理介面回報狀態。 |
+| TPM | 提供平台層級 PCR、金鑰保護與作業系統信任鏈整合。 |
+| SPDM | 提供裝置間的安全通道、身分認證與證明資料交換機制。 |
+
+實務上，BMC 可透過驅動或管理服務讀取 Caliptra 的啟動狀態、量測紀錄與 attestation 結果，再將資訊映射至 D-Bus、Redfish 或安全事件記錄。若平台同時支援 SPDM，Caliptra 產生的證明資料可作為 SPDM attestation 流程中的可信證據來源。
+
+**開發重點**：韌體需明確定義 Caliptra 與 BMC 的權責邊界。Caliptra 負責信任根與證明，BMC 負責平台管理與狀態發布；兩者不應互相取代。
+
+#### 3.2.1 加入 Caliptra 後的開機流程
+
+未導入 Caliptra 時，BMC 開機流程通常是 SoC Boot ROM 讀取 SPI Flash，載入 Bootloader，再啟動 Linux Kernel 與 OpenBMC 服務。安全檢查若存在，多半集中在 Boot ROM、Bootloader 或 TPM/UEFI 相關流程。
+
+導入 Caliptra 後，開機流程會多出一條硬體信任鏈。Caliptra 先建立裝置身分、驗證自身韌體，再對 BMC 或平台韌體進行驗證與量測。BMC 啟動後，不只回報「系統已開機」，還需回報「以何種韌體與設定狀態開機」。
+
+```mermaid
+sequenceDiagram
+    participant Power as Power Applied
+    participant Cal as Caliptra RoT
+    participant Boot as AST2700 Boot ROM / Bootloader
+    participant Linux as BMC Linux / OpenBMC
+    participant Host as Host / Remote Verifier
+
+    Power->>Cal: Reset release
+    Cal->>Cal: Load immutable ROM and device identity
+    Cal->>Cal: Authenticate Caliptra firmware
+    Cal->>Cal: Measure platform firmware and critical config
+    Cal->>Boot: Release or authorize BMC boot path
+    Boot->>Boot: Load U-Boot and signed FIT kernel image
+    Boot->>Cal: Verify FIT signature through Caliptra ECDSA384 interface
+    Boot->>Linux: Start BMC Linux and OpenBMC services
+    Linux->>Cal: Read measurements and attestation status
+    Linux->>Host: Report security state through Redfish / SPDM / logs
+```
+
+實務流程可拆成下列階段：
+
+1. **Power-on / Reset**
+
+   平台上電後，Caliptra 或平台 RoT 邏輯先進入可控制狀態。此階段會讀取 fuse、生命週期狀態、裝置身分資料與安全設定。
+
+2. **Caliptra ROM 啟動**
+
+   Caliptra ROM 屬於信任鏈起點，通常視為不可變更程式碼。它負責驗證 Caliptra Runtime Firmware，並建立後續量測與證明所需的基礎狀態。
+
+3. **Caliptra Runtime Firmware 啟動**
+
+   Caliptra Runtime Firmware 通過驗證後開始執行，接手韌體量測、金鑰派生、attestation 資料準備與安全服務。
+
+4. **BMC 韌體載入、驗證與量測**
+
+   在公開 U-Boot 支援中，AST2700 可透過 Caliptra ECDSA384 硬體介面支援 signed FIT image 驗證。也就是由 U-Boot 執行 FIT verified boot 流程，並使用 Caliptra 提供的 ECDSA384 簽章驗證能力。Linux kernel、initrd 與 device tree 是否被納入驗證範圍，取決於平台是否採用 signed FIT 映像與對應的 U-Boot 設定。
+
+   需特別區分兩件事：
+
+   * **Secure Boot**：驗證簽章，決定映像是否允許執行。
+   * **Measured Boot**：計算雜湊並記錄量測值，不一定阻止映像執行，但可供後續 attestation 判斷可信狀態。
+
+   因此，較精準的說法是：U-Boot 驗證 signed FIT kernel image，並可透過 AST2700 內建 Caliptra ECDSA384 硬體介面完成簽章驗證。
+
+5. **BMC Linux / OpenBMC 啟動**
+
+   AST2700 進入正常 Bootloader 與 Linux 開機流程。OpenBMC 服務啟動後，可讀取 Caliptra 狀態、量測紀錄、錯誤碼與 attestation evidence，並映射至 D-Bus、Redfish 或事件日誌。
+
+6. **Host 或遠端驗證**
+
+   Host、管理系統或遠端 verifier 可透過 Redfish、SPDM 或平台定義介面取得證明資料，確認 BMC 與平台韌體是否符合預期版本與量測值。
+
+| 階段 | 未加入 Caliptra | 加入 Caliptra 後 |
+| :--- | :--- | :--- |
+| 信任起點 | SoC Boot ROM 或平台既有 RoT | Caliptra ROM / 硬體信任根 |
+| 韌體驗證 | 多由 Boot ROM、Bootloader 或廠商機制處理 | 可由 Caliptra、Boot ROM 或 Bootloader 分工完成驗證與量測 |
+| 啟動紀錄 | 多為一般 boot log | 產生可用於 attestation 的量測紀錄 |
+| 遠端可信度 | 管理端主要相信 BMC 回報 | 管理端可驗證 Caliptra 簽署或保護的 evidence |
+| 失敗處置 | 依 Bootloader 或平台設計決定 | 可進入 recovery、拒絕放行下一階段，或上報安全事件 |
+
+**開發注意事項**：
+
+* 需定義哪些映像必須驗證，哪些資料只需量測。
+* 需定義驗證失敗時的策略：停止開機、切換 recovery image、降級功能，或允許開機但標記安全狀態異常。
+* 需讓 OpenBMC 能讀取 Caliptra 狀態，並以穩定的 D-Bus/Redfish 介面回報。
+* 若與 SPDM 整合，需確認 attestation evidence、憑證鏈與 measurement block 的格式與生命週期管理。
+
+### 3.3 LTPI（LVDS Tunneling Protocol and Interface）
+
+LTPI 是 DC-SCM 2.0 中用於低速控制訊號隧道化的技術。它將 GPIO、I2C/I3C、UART、Post Code 等訊號封裝後，透過少量 LVDS 差分線在 HPM 與 SCM 間傳輸。
+
+* **定位**：低速控制訊號的封裝與傳輸機制。
+* **目的**：降低 DC-SCI 連接器腳位需求，取代大量獨立低速訊號線。
+* **本質**：偏硬體與鏈路層設計，與 D-Bus 等軟體 IPC 無直接對應關係。
+* **韌體重點**：需完成 LTPI 控制器初始化、鏈路訓練、握手流程、錯誤狀態處理與訊號映射設定。
+
+### 3.4 MCTP（Management Component Transport Protocol）
+
+MCTP 是 DMTF 制定的管理通訊協定，用於 BMC、CPU、SmartNIC、NVMe、CXL 裝置等元件間的管理訊息傳輸。其特點是傳輸層獨立，可承載於不同實體介面。
+
+常見傳輸方式包含：
+
+* **MCTP over PCIe VDM**：使用 PCIe Vendor Defined Message，適合高速平台內管理通訊。
+* **MCTP over SMBus / I2C**：使用既有低速管理匯流排，普及度高。
+* **MCTP over Serial**：用於特定序列傳輸場景。
+
+MCTP 本身只定義管理訊息傳輸與路由；上層管理內容通常由 PLDM、SPDM 或 NVMe-MI 承載。
+
+* **PLDM（Platform Level Data Model）**：負責平台狀態、感測器、FRU、BIOS 設定與韌體更新等管理模型。
+* **SPDM（Security Protocol and Data Model）**：負責裝置身分驗證、憑證交換與安全通道建立。
+* **NVMe-MI**：負責 NVMe 裝置管理與狀態查詢。
+
+#### 3.4.1 MCTP 封包格式
+
+MCTP 封包通常被包在底層實體傳輸格式中，例如 PCIe VDM 或 I2C。概念結構如下：
 
 ```mermaid
 graph LR
-    subgraph PhysicalLayer ["實體層傳輸 (如 PCIe VDM / I2C / Serial)"]
-        A[物理層標頭<br/>Physical Header] --> B[MCTP 傳輸層標頭<br/>Transport Header]
-        B --> C[訊息層內容<br/>Message Payload]
-        C --> D[物理層結尾 / 校驗碼<br/>Trailer & CRC]
+    subgraph PhysicalLayer ["Physical Transport: PCIe VDM / I2C / Serial"]
+        A[Physical Header] --> B[MCTP Transport Header]
+        B --> C[Message Payload]
+        C --> D[Trailer / CRC]
     end
     style B fill:#bbf,stroke:#333,stroke-width:2px
     style C fill:#bfb,stroke:#333,stroke-width:2px
 ```
 
-**1. MCTP 傳輸層標頭 (MCTP Transport Header)**
-這是剝除掉物理外衣 (如 I2C Address 或是 PCIe VDM Header) 後，MCTP 最核心的固定 4 Bytes 標頭，負責負責網路中的節點尋址與大封包切割：
+MCTP Transport Header 為固定 4 Bytes：
 
-| Byte (位元組) | 欄位名稱 | 功能解釋 |
+| Byte | 欄位 | 說明 |
 | :--- | :--- | :--- |
-| **Byte 1** | `Rsvd` (4-bit) + `Header Version` (4-bit) | 保留位元與版本號（通常版本號目前為 `0x01`）。 |
-| **Byte 2** | `Destination EID` (8-bit) | **目標端點 ID**。MCTP 網路中每一個通訊裝置 (如 BMC, CPU, NVMe) 被分配到的專屬網管位址 (Endpoint ID)。 |
-| **Byte 3** | `Source EID` (8-bit) | **來源端點 ID**。標註這個封包是誰發出來的。 |
-| **Byte 4** | `SOM` + `EOM` + `PktSeq` + `TO` + `Msg Tag` | **控制封包拆解與組裝**。由於 MCTP 基線最大負載只有 64 Bytes，太大的資料需切件 (Fragmentation)。<br>- **SOM (Start of Message)**: 代表這是一筆大訊息切出來的第一個封包。<br>- **EOM (End of Message)**: 代表這是最後一個封包。 |
+| Byte 1 | `Rsvd` + `Header Version` | 保留欄位與版本號，常見版本為 `0x01`。 |
+| Byte 2 | `Destination EID` | 目的端點 ID。 |
+| Byte 3 | `Source EID` | 來源端點 ID。 |
+| Byte 4 | `SOM`、`EOM`、`PktSeq`、`TO`、`Msg Tag` | 控制訊息分段、重組、請求/回應關聯與 Tag 管理。 |
 
-```mermaid
-classDiagram
-    class MCTP_Transport_Header {
-        <<固定 4 Bytes>>
-        +Byte 1 : Rsvd (4-bit) + Header Version (4-bit)
-        +Byte 2 : Destination EID (8-bit)
-        +Byte 3 : Source EID (8-bit)
-        +Byte 4 : SOM (1) + EOM (1) + PktSeq (2) + TO (1) + Msg Tag (3)
-    }
-```
+<div align="center">
 
-**2. 訊息層與負載內容 (Message Payload)**
-如果這是一個完整的訊息或是訊息的第一個封包（即 `SOM = 1`），進入 Payload 的**第一個 Byte 必定為「Message Type (訊息類型)」**，這是讓接收端決定如何解析後續二進位資料的關鍵印章：
+**MCTP Transport Header Layout（Fixed 4 Bytes / 32 bits）**
 
-* **0x00**：MCTP Control Message（管理用的內部語言，用於設定網路通訊狀態、查詢設備支援能力、動態分配 EID）
-* **0x01**：PLDM (Platform Level Data Model)
-* **0x04**：NVMe-MI (NVMe 管理介面)
-* **0x05**：SPDM (安全憑證與身份認證)
+<table>
+  <tr>
+    <th style="text-align:center;">Byte</th>
+    <th style="text-align:center;">Bit 7</th>
+    <th style="text-align:center;">Bit 6</th>
+    <th style="text-align:center;">Bit 5</th>
+    <th style="text-align:center;">Bit 4</th>
+    <th style="text-align:center;">Bit 3</th>
+    <th style="text-align:center;">Bit 2</th>
+    <th style="text-align:center;">Bit 1</th>
+    <th style="text-align:center;">Bit 0</th>
+  </tr>
+  <tr>
+    <td style="text-align:center;"><strong>Byte 1</strong></td>
+    <td colspan="4" style="text-align:center;background:#fef3c7;"><strong>Rsvd</strong><br><em>4-bit</em></td>
+    <td colspan="4" style="text-align:center;background:#dbeafe;"><strong>Header Version</strong><br><em>4-bit</em></td>
+  </tr>
+  <tr>
+    <td style="text-align:center;"><strong>Byte 2</strong></td>
+    <td colspan="8" style="text-align:center;background:#dcfce7;"><strong>Destination EID</strong><br><em>8-bit</em></td>
+  </tr>
+  <tr>
+    <td style="text-align:center;"><strong>Byte 3</strong></td>
+    <td colspan="8" style="text-align:center;background:#ede9fe;"><strong>Source EID</strong><br><em>8-bit</em></td>
+  </tr>
+  <tr>
+    <td style="text-align:center;"><strong>Byte 4</strong></td>
+    <td style="text-align:center;background:#fee2e2;"><strong>SOM</strong><br><em>1</em></td>
+    <td style="text-align:center;background:#fee2e2;"><strong>EOM</strong><br><em>1</em></td>
+    <td colspan="2" style="text-align:center;background:#cffafe;"><strong>PktSeq</strong><br><em>2-bit</em></td>
+    <td style="text-align:center;background:#fce7f3;"><strong>TO</strong><br><em>1</em></td>
+    <td colspan="3" style="text-align:center;background:#e0e7ff;"><strong>Msg Tag</strong><br><em>3-bit</em></td>
+  </tr>
+</table>
 
-後續的資料空間，將全數交由被指定的上層協定（如依據 PLDM 的專屬格式）去填寫具體的網管指令。
+</div>
 
-#### 3.3.2 PLDM 模組化架構與 Type 定義
+若封包為完整訊息或第一個分段（`SOM = 1`），Message Payload 的第一個 Byte 為 Message Type，用於指定上層協定：
 
-當 MCTP 封包的 Message Type 標示為 `0x01` 時，代表內部的 Payload 是一筆 **PLDM 訊息**。
+| Message Type | 協定 |
+| :---: | :--- |
+| `0x00` | MCTP Control Message |
+| `0x01` | PLDM |
+| `0x04` | NVMe-MI |
+| `0x05` | SPDM |
 
-PLDM 之所以能涵蓋極度廣泛的管理功能，是因為它採用了**兩層式**的指令結構：`PLDM Type` + `PLDM Command`。在 PLDM 專屬的標頭中，會明確標示這個封包屬於哪一個功能大類 (Type)：
+#### 3.4.2 PLDM 模組化架構
+
+當 MCTP Message Type 為 `0x01` 時，Payload 為 PLDM 訊息。PLDM 使用 `PLDM Type` 與 `PLDM Command` 組成管理命令。
 
 ```mermaid
 classDiagram
     class PLDM_Message_Structure {
-        <<MCTP Payload 內部結構>>
-        +Byte 1: Instance ID (請求/回應的配對編號)
+        <<Inside MCTP Payload>>
+        +Byte 1: Instance ID
         +Byte 2: PLDM Type (6-bit) + Header Version (2-bit)
         +Byte 3: PLDM Command Code (8-bit)
-        +Byte 4~N: 具體指令的參數與資料 (Payload)
+        +Byte 4~N: Command Payload
     }
 ```
 
-**常見的 PLDM Type 分類表**
+常見 PLDM Type：
 
-DMTF 針對不同的管理領域，分別制定了獨立的規範書，也就是所謂的 PLDM Types：
-
-| PLDM Type | 名稱與對應規範 | 核心功能說明 |
+| PLDM Type | 名稱 / 規範 | 功能 |
 | :---: | :--- | :--- |
-| **Type 0** | **Base / Discovery** (DSP0240) | **身分查核與能力探索**。用來詢問設備：「你支援哪些 PLDM Types？」與「你的版本是多少？」。這是所有 PLDM 通訊的第一步。 |
-| **Type 2** | **BIOS Control** (DSP0247) | **BIOS 參數管理**。用來讀取或設定 Host BIOS 的各項配置（如 Boot Order）。 |
-| **Type 3** | **Monitoring & Control** (DSP0248) | **感測器與狀態監控**。這也是最龐大的部分。包含讀取溫度/電壓感測器、讀取系統狀態，以及處理 PDR (Platform Descriptor Record，硬體地圖)。 |
-| **Type 4** | **FRU Data** (DSP0257) | **資產資訊讀取**。讀取設備的製造商、序號、出廠日期、型號等 FRU (Field Replaceable Unit) 資訊。 |
-| **Type 5** | **Firmware Update** (DSP0267) | **韌體更新**。提供一套跨廠牌標準化的韌體傳輸、驗證、燒錄與重啟啟用的流程。 |
-| **Type 6** | **RDE** (DSP0218) | **Redfish Device Enablement**。允許將高階的 Redfish JSON API 指令，壓縮封裝成二進位透過 PLDM 傳輸給底層設備。 |
+| Type 0 | Base / Discovery（DSP0240） | 查詢裝置支援的 PLDM Type 與版本。 |
+| Type 2 | BIOS Control（DSP0247） | 讀取或設定 Host BIOS 參數。 |
+| Type 3 | Monitoring & Control（DSP0248） | 感測器、狀態監控與 PDR 管理。 |
+| Type 4 | FRU Data（DSP0257） | 讀取 FRU 資產資訊。 |
+| Type 5 | Firmware Update（DSP0267） | 標準化韌體傳輸、驗證、燒錄與啟用流程。 |
+| Type 6 | RDE（DSP0218） | 將 Redfish 裝置模型映射至 PLDM 傳輸。 |
 
-**能力探索機制 (Discovery Mechanism) 的好處：**
+PLDM 採模組化設計，裝置只需實作必要 Type。例如溫度感測器可能支援 Type 0 與 Type 3；NVMe 裝置可能支援 Type 0、Type 4 與 Type 5。
 
-這種模組化的最大優勢在於**「按需實作 (Pay-as-you-go)」**。一個連接在 PCIe 上的設備不需要支援所有的 PLDM 功能：
-* 一顆 **智慧型溫度感測器** 可能只回報自己支援 `Type 0` 與 `Type 3`。
-* 一張 **NVMe 網卡** 可能回報支援 `Type 0`、`Type 4` (給序號) 與 `Type 5` (可遠端更新韌體)。
+#### 3.4.3 OpenBMC 中的 MCTP/PLDM 分層
 
-當 AST2700 (BMC) 上的 `pldmd` (PLDM Daemon) 啟動時，它會先用 **Type 0** 去掃描網路上所有端點的能力，然後根據結果，將後續的封包精準派發給負責處理感測器或韌體更新的內部子程式，達成完美的軟體解耦。
+OpenBMC 通常將 MCTP/PLDM 處理放在 User-space Daemon，而非 Kernel 內部：
 
-**OpenBMC 軟體分層：Daemon Layer (背景服務層)**
+1. **Linux Kernel**：負責硬體驅動、PCIe VDM/I2C 收送、中斷處理與 `AF_MCTP` 等介面。Kernel 不解析 PLDM 業務邏輯。
+2. **`mctpd`**：負責 MCTP 網路探索、EID 分配、路由管理與 Control Message。
+3. **`pldmd`**：負責 PLDM Discovery、感測器/FRU/韌體更新等管理邏輯，並將狀態發布至 D-Bus，供 Redfish、Web UI 或其他服務使用。
 
-值得特別強調的是，在 OpenBMC 架構中，上述的 MCTP 與 PLDM 解析及能力探索，**完全不在 Linux Kernel 內執行**，而是交由使用者空間 (User-space) 的 **Daemon Layer** 來負責。這展現了明確的權責分層：
+此分層可降低 Kernel 複雜度，並讓 PLDM 功能擴充集中於 User-space。
 
-1. **Linux Kernel (硬體搬運工)**：核心內的 PCIe VDM 或 I2C 驅動程式只負責處理硬體中斷，將收到的原始二進位資料撈出，並透過網路 Socket (如 `AF_MCTP`) 往上傳遞給應用程式。Kernel 根本不需要懂什麼是 PLDM。
-2. **`mctpd` (MCTP Daemon)**：負責底層網管路由。它透過發送 MCTP Control Message 探索實體匯流排，動態分配 EID (Endpoint ID) 給新加入的設備，建構出基礎的通訊網路地圖。
-3. **`pldmd` (PLDM Daemon)**：負責高階管理邏輯。它依賴 `mctpd` 建立的管線，主動對各端點發出 PLDM Type 0 指令查戶口。隨後，`pldmd` 會將收集到的硬體狀態 (如感測器溫度、韌體版本) 轉換為標準的 **D-Bus** 訊號，供最上層的 Web UI 或 Redfish 服務存取。
+### 3.5 DC-SCM 與 PCIe 拓樸設計
 
-這種將協定邏輯全數抽離至 Daemon Layer 的設計，讓韌體開發者可以隨時擴充或升級 PLDM 支援的功能模組，而完全不需要重新編譯或更動底層的 Linux Kernel 硬體驅動。
+AST2700 在 DC-SCM 架構中管理 SSD 或其他 PCIe 裝置時，常見拓樸如下。
 
-### 3.4 實務探討：DC-SCM 規範與 PCIe 拓樸設計 (以 SSD 管理為例)
+#### 場景一：標準 DC-SCM 2.0 設計
 
-在 AST2700 搭配 DC-SCM 的硬體設計中，如何透過 PCIe 管理儲存裝置 (如 SSD) 會因架構而異。以下列舉三種常見的拓樸場景與優缺點分析：
+* **架構**：AST2700 以 PCIe Endpoint 連接 HPM，不將額外 PCIe RC 腳位暴露到 DC-SCI。
+* **管理路徑**：BMC 透過 MCTP over PCIe VDM，經 Host CPU 或 PCIe Switch 轉發管理命令至 SSD。
+* **優點**：符合 DC-SCM 標準互通性，不額外占用連接器腳位。
+* **要求**：韌體需完整支援 MCTP、PLDM 或 NVMe-MI 等管理協定。
 
-**場景一：標準 DC-SCM 2.0 設計 (業界最推薦)**
-* **架構說明**：為了嚴格遵守 DC-SCM 標準的普適性，金手指介面**不允許**暴露出 AST2700 額外的 PCIe RC (Root Complex) 腳位。AST2700 乖乖扮演標準的 PCIe EP (Endpoint) 角色。
-* **管理路徑**：不依賴實體 PCIe 專屬線路直連 SSD，而是採用 **In-Band 精神結合 OOB 協定**的管理策略。AST2700 透過表準的 PCIe 介面連往 Host CPU，利用 **MCTP over VDM** 協議，請 Host CPU 或是 PCIe Switch 協助轉發網管指令給主機板上的 SSD。
-* **結論**：此架構完全符合標準互通性，無須浪費寶貴的 SCM 金手指腳位，但要求韌體開發者必須具備深厚的 MCTP 與 PLDM 軟體實作能力。
+#### 場景二：SCM 本地 PCIe RC 擴充
 
-**場景二：AST2700 本地擴充 (Local RC)**
-* **架構說明**：當討論到「對內門戶」時，通常是指 SCM 卡實體板層次上的擴充。例如在 SCM 卡上直接配備一組 M.2 介面插槽來安插 SSD，專門用來存放 BMC 高速寫入的 Log 或多版本備份韌體。
-* **管理路徑**：AST2700 (設定為 RC) $\rightarrow$ SCM 卡上的實體 PCB 線路 $\rightarrow$ SCM 卡上的 SSD。
-* **結論**：由於 PCIe 訊號完全沒有離開 SCM 卡，因此根本不需要經過對外溝通的金手指。這**完全符合** DC-SCM 標準——因為 OCP 標準所限制的僅有「SCM 至 HPM 的接口腳位」，並不干涉卡塊內部的自由設計。
+* **架構**：AST2700 將本機 PCIe 控制器設定為 RC，連接 SCM 板上的 M.2 SSD。
+* **管理路徑**：AST2700 RC → SCM 板內 PCIe 走線 → 本機 SSD。
+* **優點**：PCIe 訊號不離開 SCM，不影響 DC-SCI 腳位定義；適合 BMC 日誌、備份與本地高速儲存。
+* **限制**：該 SSD 屬於 BMC 本機資源，Host 預設不可直接存取。
 
-**場景三：客製化外衝的「非標準」設計**
-* **架構說明**：這是一種強行跨板直連的設計。硬體工程師直接把 AST2700 的 PCIe RC 腳位牽線出來拉到金手指上，試圖以實體線路跨板直連主機板 (HPM) 的特定硬碟。
-* **問題與結論**：這會導致你的 SCM 卡金手指腳位定義與其他廠家完全衝突（不回溯相容標準槽）。在業界，某些超大型資料中心 (如 Google 或 Meta) 為了極端的專案性能需求偶爾會如此設計，變成一種「類 DC-SCM 私有架構」。但代價是喪失了「標準 DC-SCM 2.0」可以跨平台抽換模組的最大優勢。
+#### 場景三：客製化跨板 PCIe RC 設計
+
+* **架構**：將 AST2700 PCIe RC 腳位拉至 DC-SCI，直接連接 HPM 上的 SSD 或 PCIe 裝置。
+* **風險**：可能破壞標準 DC-SCM 腳位相容性，導致 SCM 無法跨平台抽換。
+* **適用情境**：僅適合明確控制 HPM/SCM 成套設計的大型客製平台，不建議作為通用 DC-SCM 設計。
+
+---
+
+## 四、OpenBMC GPIO 控制流程
+
+OpenBMC 控制 GPIO 時通常不直接由應用程式寫硬體暫存器，而是經過使用者介面、D-Bus、Daemon、Kernel Driver 與硬體控制器。AST2700/DC-SCM 平台還需區分本地 GPIO 與 LTPI 隧道化 GPIO。
+
+### 第一階段：使用者與應用層
+
+管理需求可來自 Web UI、Redfish API、CLI 或測試工具。例如維護者切換電源狀態，或開發者透過 `gpioset` 操作指定 GPIO line。
+
+OpenBMC 相關服務接收請求後，轉換為平台內部的狀態變更或 GPIO 操作。
+
+### 第二階段：D-Bus 層
+
+OpenBMC 服務透過 D-Bus 傳遞狀態與命令。D-Bus 負責服務間溝通，使 Web UI、Redfish、電源控制服務與 GPIO 管理服務不需直接耦合。
+
+### 第三階段：Kernel 與驅動層
+
+GPIO 管理服務透過 `libgpiod` 或 Kernel GPIO 介面下達操作。Linux Kernel 中的 ASPEED GPIO Driver 接手後，將抽象 GPIO 操作轉換為硬體暫存器存取或對應控制器命令。
+
+### 第四階段：實體傳輸層
+
+依 GPIO 所在位置分為兩種模式：
+
+1. **本地 GPIO**
+
+   Driver 直接操作 AST2700 內部 GPIO 控制器暫存器，晶片實體腳位電平隨之改變。
+
+2. **LTPI 隧道化 GPIO**
+
+   若目標 GPIO 位於 HPM，AST2700 需將 GPIO 狀態交由 LTPI 控制器封裝，透過 LVDS Link 傳至 HPM 端接收邏輯，再還原為目標腳位狀態。
+
+```mermaid
+flowchart LR
+    A[Web UI / Redfish / CLI] --> B[OpenBMC Service]
+    B --> C[D-Bus]
+    C --> D[GPIO Daemon / libgpiod]
+    D --> E[Linux GPIO Driver]
+    E --> F{GPIO Location}
+    F -->|Local| G[AST2700 GPIO Register]
+    F -->|Remote HPM| H[LTPI Controller]
+    H --> I[LVDS Link]
+    I --> J[HPM LTPI Receiver]
+    J --> K[Target GPIO Pin]
+```
 
 ---
 
-## 🔀 四、 OpenBMC 在 AST2700/DC-SCM 架構下的 GPIO 控制流程
+## 適用範圍
 
-在 OpenBMC 的架構中，控制一個 GPIO（通用型輸入輸出腳位）並非直接寫入硬體暫存器，而是經過一個標準的「軟硬體分層堆疊」。特別是在你負責的 **AST2700** 與 **DC-SCM** 架構下，這個流程會因為「訊號隧道化（LTPI）」而變得更具技術深度。以下是實際運行的四個階段：
-
-### 第一階段：使用者與應用層 (User & Application Layer)
-一切從管理需求開始。
-* **觸發源**：管理員透過 **Web UI** 點擊開關，或是開發者在 **tio** 終端機輸入 Linux 指令（如使用 gpioset）。
-* **管理服務**：OpenBMC 中的應用服務（如 phosphor-gpio-monitor）會收到請求。
-
-### 第二階段：通訊匯流排層 (D-Bus Layer)
-OpenBMC 核心機制。
-* **D-Bus 傳輸**：應用服務不會直接找驅動程式，而是透過 **D-Bus** 發送訊息。D-Bus 就像系統內部的「通訊大動脈」，負責將「開啟電源（GPIO 動作）」的需求傳遞給專門負責 GPIO 管理的守護行程 (Daemon)。
-
-### 第三階段：核心與驅動層 (Linux Kernel & Driver)
-進入作業系統大腦。
-* **標準介面**：GPIO 管理行程會透過 Linux 標準的 **gpiod** 函式庫或內核介面下達指令。
-* **硬體驅動**：Linux 核心內的 **ASPEED GPIO Driver** 會接手，將軟體邏輯轉化為對硬體控制器的操作。
-
-### 第四階段：實體傳輸層 (Physical Layer - 區分兩種模式)
-這是 AST2700 最關鍵的環節，取決於該 GPIO 是「本地」還是「跨板」。
-1. **本地控制 (Traditional GPIO)**：
-   * 驅動程式直接寫入 AST2700 內部的暫存器，晶片上的實體腳位電平立即改變。
-2. **跨板隧道化 (LTPI 模式 - DC-SCM 架構)**：
-   * **封裝**：當驅動程式要控制主機板（HPM）上的 GPIO 時，訊號會被送入 **LTPI 控制器**。
-   * **隧道化**：LTPI 會將 GPIO 狀態「隧道化」，封裝進特殊的訊號格式中。
-   * **傳輸**：透過 **PCIe 的實體線路 (PHY)**，以高速序列訊號將指令傳送到對面的主機板。
-   * **解開**：主機板端的接收晶片解開封包，最後才真正撥動目標腳位。
-
----
-> 📌 本文件整合自開發者筆記與技術對話紀錄，適用於 AST2700 PCIe 韌體工程師參考。
+本文件適用於 AST2700 PCIe Endpoint、OpenBMC、DC-SCM、Caliptra、LTPI 與 MCTP/PLDM 相關韌體開發、平台 bring-up 與架構討論。
