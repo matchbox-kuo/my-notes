@@ -1,0 +1,1252 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BMC 基礎知識、伺服器應用與管理協定總整理</title>
+  <style>
+    :root {
+      --bg: #071018;
+      --panel: #101b27;
+      --panel-2: #132233;
+      --text: #edf6ff;
+      --muted: #9fb4c8;
+      --line: rgba(149, 184, 217, 0.24);
+      --cyan: #38c7e8;
+      --green: #4fd18b;
+      --amber: #f3b94f;
+      --rose: #ef6a84;
+      --violet: #9d8cf2;
+      --blue: #6fa8f5;
+      --orange: #f08d45;
+      --red: #ff5c7a;
+      --teal: #2dbfad;
+      --lime: #9bd659;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif;
+      line-height: 1.72;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(56, 199, 232, 0.16), transparent 30%),
+        radial-gradient(circle at 85% 15%, rgba(157, 140, 242, 0.13), transparent 28%),
+        linear-gradient(135deg, #071018 0%, #0b1725 48%, #101721 100%);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .page {
+      min-height: 100vh;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      min-height: 76vh;
+      padding: 72px clamp(22px, 5vw, 72px) 44px;
+      display: grid;
+      align-content: center;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.055) 1px, transparent 1px);
+      background-size: 46px 46px;
+      mask-image: linear-gradient(to bottom, black, transparent 88%);
+      pointer-events: none;
+    }
+
+    .hero-content {
+      position: relative;
+      width: min(1180px, 100%);
+      margin: 0 auto;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--cyan);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 34px;
+      height: 2px;
+      background: linear-gradient(90deg, var(--cyan), var(--green));
+    }
+
+    h1 {
+      max-width: 980px;
+      margin: 18px 0 22px;
+      font-size: clamp(40px, 7vw, 86px);
+      line-height: 1.04;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 820px;
+      color: #c7d8e8;
+      font-size: clamp(17px, 2vw, 22px);
+    }
+
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 42px;
+      width: min(960px, 100%);
+    }
+
+    .stat {
+      min-height: 118px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(16, 27, 39, 0.72);
+      backdrop-filter: blur(14px);
+      box-shadow: var(--shadow);
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 28px;
+      line-height: 1;
+      color: var(--cyan);
+    }
+
+    .stat span {
+      display: block;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .color-logic {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+      width: min(980px, 100%);
+    }
+
+    .color-key {
+      --key-color: var(--blue);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      padding: 6px 10px;
+      border: 1px solid color-mix(in srgb, var(--key-color) 34%, var(--line));
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--key-color) 8%, rgba(16, 27, 39, 0.72));
+      color: #dcebf7;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .color-key::before {
+      content: "";
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      background: var(--key-color);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--key-color) 18%, transparent);
+    }
+
+    .key-cyan { --key-color: var(--cyan); }
+    .key-blue { --key-color: var(--blue); }
+    .key-green { --key-color: var(--green); }
+    .key-violet { --key-color: var(--violet); }
+    .key-amber { --key-color: var(--amber); }
+    .key-rose { --key-color: var(--rose); }
+    .key-orange { --key-color: var(--orange); }
+    .key-teal { --key-color: var(--teal); }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 28px;
+      width: min(1320px, calc(100% - 44px));
+      margin: 0 auto;
+      padding: 38px 0 80px;
+      transition: grid-template-columns 180ms ease;
+    }
+
+    .layout.nav-collapsed {
+      grid-template-columns: 58px minmax(0, 1fr);
+    }
+
+    .nav {
+      position: sticky;
+      top: 18px;
+      height: fit-content;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(10, 18, 28, 0.78);
+      backdrop-filter: blur(18px);
+      overflow: hidden;
+      transition: padding 180ms ease;
+    }
+
+    .layout.nav-collapsed .nav {
+      padding: 12px;
+    }
+
+    .nav-title {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .nav-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .nav-toggle {
+      width: 34px;
+      height: 34px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: rgba(68, 215, 255, 0.10);
+      color: #ecfbff;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .nav-toggle:hover {
+      border-color: rgba(68, 215, 255, 0.72);
+      background: rgba(68, 215, 255, 0.18);
+    }
+
+    .nav a {
+      display: block;
+      padding: 10px 12px;
+      border-radius: 6px;
+      color: #d8e7f5;
+      font-size: 14px;
+      white-space: nowrap;
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+
+    .nav a:hover {
+      background: rgba(68, 215, 255, 0.13);
+      color: var(--cyan);
+    }
+
+    .layout.nav-collapsed .nav-title,
+    .layout.nav-collapsed .nav-links {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(-8px);
+      width: 0;
+      height: 0;
+      overflow: hidden;
+    }
+
+    .layout.nav-collapsed .nav-header {
+      margin-bottom: 0;
+      justify-content: center;
+    }
+
+    .layout.nav-collapsed .nav-toggle {
+      transform: rotate(180deg);
+    }
+
+    main {
+      display: grid;
+      gap: 26px;
+    }
+
+    section {
+      --section-accent: var(--cyan);
+      padding: clamp(22px, 3vw, 34px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(90deg, color-mix(in srgb, var(--section-accent) 12%, transparent), transparent 34%),
+        linear-gradient(180deg, rgba(16, 27, 39, 0.92), rgba(9, 17, 27, 0.92));
+      box-shadow: var(--shadow);
+    }
+
+    section[data-accent="cyan"] { --section-accent: var(--cyan); }
+    section[data-accent="blue"] { --section-accent: var(--blue); }
+    section[data-accent="green"] { --section-accent: var(--green); }
+    section[data-accent="violet"] { --section-accent: var(--violet); }
+    section[data-accent="rose"] { --section-accent: var(--rose); }
+    section[data-accent="amber"] { --section-accent: var(--amber); }
+    section[data-accent="teal"] { --section-accent: var(--teal); }
+    section[data-accent="orange"] { --section-accent: var(--orange); }
+    section[data-accent="lime"] { --section-accent: var(--lime); }
+
+    .section-head {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 22px;
+    }
+
+    .section-index {
+      color: var(--section-accent);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(26px, 4vw, 42px);
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 28px 0 14px;
+      color: #ffffff;
+      font-size: 21px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 16px;
+      color: #d7e4ef;
+    }
+
+    .callout {
+      margin: 18px 0 24px;
+      padding: 18px 20px;
+      border-left: 4px solid var(--section-accent);
+      border-radius: var(--radius);
+      background: color-mix(in srgb, var(--section-accent) 14%, transparent);
+      color: #ecfbff;
+      font-weight: 700;
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .grid.cols-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid.cols-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .grid.cols-5 {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .tile {
+      --tile-accent: var(--section-accent);
+      padding: 18px;
+      border: 1px solid color-mix(in srgb, var(--tile-accent) 30%, var(--line));
+      border-radius: var(--radius);
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--tile-accent) 8%, transparent), transparent 62%),
+        linear-gradient(180deg, rgba(19, 34, 51, 0.95), rgba(13, 24, 37, 0.95));
+    }
+
+    .tile h4 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      color: color-mix(in srgb, var(--tile-accent) 64%, white);
+    }
+
+    .tile p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .accent-green { color: var(--green); }
+    .accent-blue { color: var(--blue); }
+    .accent-violet { color: var(--violet); }
+    .accent-rose { color: var(--rose); }
+    .accent-amber { color: var(--amber); }
+    .accent-orange { color: var(--orange); }
+    .accent-teal { color: var(--teal); }
+    .accent-lime { color: var(--lime); }
+
+    .tone-green { --tile-accent: var(--green); }
+    .tone-cyan { --tile-accent: var(--cyan); }
+    .tone-blue { --tile-accent: var(--blue); }
+    .tone-violet { --tile-accent: var(--violet); }
+    .tone-rose { --tile-accent: var(--rose); }
+    .tone-amber { --tile-accent: var(--amber); }
+    .tone-orange { --tile-accent: var(--orange); }
+    .tone-teal { --tile-accent: var(--teal); }
+    .tone-lime { --tile-accent: var(--lime); }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(6, 13, 21, 0.36);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 720px;
+    }
+
+    th,
+    td {
+      padding: 13px 15px;
+      border-bottom: 1px solid rgba(149, 184, 217, 0.18);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: #ffffff;
+      background: color-mix(in srgb, var(--section-accent) 18%, rgba(68, 215, 255, 0.08));
+      font-size: 14px;
+    }
+
+    td {
+      color: #d9e7f2;
+      font-size: 14px;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: stretch;
+      gap: 12px;
+      margin: 18px 0;
+    }
+
+    .svg-diagram {
+      width: 100%;
+      margin: 18px 0;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(180deg, rgba(10, 18, 28, 0.78), rgba(7, 16, 24, 0.78)),
+        linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+      background-size: auto, 28px 28px, 28px 28px;
+    }
+
+    .svg-diagram svg {
+      display: block;
+      width: 100%;
+      min-width: 680px;
+      height: auto;
+    }
+
+    .diagram-card {
+      fill: rgba(167, 139, 250, 0.12);
+      stroke: rgba(167, 139, 250, 0.78);
+      stroke-width: 1.6;
+      rx: 4;
+    }
+
+    .diagram-card.main {
+      fill: rgba(68, 215, 255, 0.12);
+      stroke: rgba(68, 215, 255, 0.88);
+    }
+
+    .diagram-line {
+      fill: none;
+      stroke: rgba(224, 237, 249, 0.86);
+      stroke-width: 1.5;
+    }
+
+    .diagram-title {
+      fill: #f7fbff;
+      font: 700 17px "Segoe UI", "Microsoft JhengHei", sans-serif;
+      text-anchor: middle;
+    }
+
+    .diagram-sub {
+      fill: #c8d7e7;
+      font: 15px "Segoe UI", "Microsoft JhengHei", sans-serif;
+      text-anchor: middle;
+    }
+
+    .node {
+      flex: 1 1 155px;
+      min-height: 84px;
+      display: grid;
+      place-items: center;
+      padding: 14px;
+      border: 1px solid rgba(68, 215, 255, 0.32);
+      border-radius: var(--radius);
+      background: rgba(68, 215, 255, 0.08);
+      text-align: center;
+      color: #ecfbff;
+      font-weight: 800;
+    }
+
+    .rack-diagram {
+      display: grid;
+      grid-template-columns: minmax(170px, 0.9fr) minmax(260px, 1.4fr) minmax(170px, 0.9fr);
+      gap: 16px;
+      align-items: center;
+      margin: 18px 0;
+    }
+
+    .rack-column,
+    .rack-center {
+      display: grid;
+      gap: 12px;
+    }
+
+    .rack-center {
+      padding: 18px;
+      border: 1px solid rgba(84, 227, 154, 0.34);
+      border-radius: var(--radius);
+      background: rgba(84, 227, 154, 0.08);
+    }
+
+    .label-box {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(19, 34, 51, 0.86);
+      text-align: center;
+      color: #eef7ff;
+      font-weight: 800;
+    }
+
+    ul {
+      margin: 10px 0 0;
+      padding-left: 20px;
+      color: #d7e4ef;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #bdefff;
+      font-family: Consolas, "Cascadia Mono", monospace;
+    }
+
+    .code-list {
+      display: grid;
+      gap: 8px;
+      padding: 16px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: #071018;
+      color: #bdefff;
+      font-family: Consolas, "Cascadia Mono", monospace;
+      overflow-x: auto;
+    }
+
+    footer {
+      padding: 28px;
+      color: var(--muted);
+      text-align: center;
+      border-top: 1px solid var(--line);
+    }
+
+    @media (max-width: 1020px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .layout.nav-collapsed {
+        grid-template-columns: 1fr;
+      }
+
+      .nav {
+        position: static;
+      }
+
+      .layout.nav-collapsed .nav {
+        padding: 12px;
+      }
+
+      .layout.nav-collapsed .nav-title,
+      .layout.nav-collapsed .nav-links {
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(-6px);
+        width: auto;
+        height: 0;
+        overflow: hidden;
+      }
+
+      .hero-stats,
+      .grid.cols-5,
+      .grid.cols-3,
+      .grid.cols-2,
+      .rack-diagram {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .hero {
+        min-height: auto;
+        padding-top: 48px;
+      }
+
+      .hero-stats {
+        grid-template-columns: 1fr;
+      }
+
+      section {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div class="hero-content">
+        <div class="eyebrow">BMC Study Notes</div>
+        <h1>BMC 基礎知識、伺服器應用與管理協定總整理</h1>
+        <p class="lead">整理伺服器分類、AI rack 關鍵元件、BMC 基礎概念、典型應用與管理協定，作為後續學習 OpenBMC、Redfish、PLDM、MCTP、PCIe 等主題的基礎。</p>
+        <div class="hero-stats">
+          <div class="stat"><strong>Rack</strong><span>伺服器與整櫃級平台</span></div>
+          <div class="stat"><strong>BMC</strong><span>遠端維運與硬體管理核心</span></div>
+          <div class="stat"><strong>AI</strong><span>GPU、液冷與高速互連</span></div>
+          <div class="stat"><strong>DMTF</strong><span>Redfish / PLDM / MCTP 標準</span></div>
+        </div>
+        <div class="color-logic" aria-label="配色邏輯">
+          <span class="color-key key-cyan">硬體 / 拓撲</span>
+          <span class="color-key key-blue">管理 / 介面</span>
+          <span class="color-key key-green">監控 / 健康</span>
+          <span class="color-key key-violet">標準 / 韌體</span>
+          <span class="color-key key-amber">電源 / 風險</span>
+          <span class="color-key key-rose">故障 / 安全</span>
+          <span class="color-key key-orange">運算 / 效能</span>
+          <span class="color-key key-teal">維運 / 流程</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout" id="pageLayout">
+      <nav class="nav" aria-label="文件導覽">
+        <div class="nav-header">
+          <p class="nav-title">目錄</p>
+          <button class="nav-toggle" type="button" id="navToggle" aria-expanded="true" aria-controls="navLinks" title="收合目錄">‹</button>
+        </div>
+        <div class="nav-links" id="navLinks">
+          <a href="#server-types">0. 伺服器種類</a>
+          <a href="#ai-rack">1. AI Rack 與高階 GPU 平台名詞</a>
+          <a href="#bmc-intro">2. BMC 是什麼</a>
+          <a href="#bmc-position">3. BMC 在系統中的位置</a>
+          <a href="#bmc-functions">4. 基礎功能</a>
+          <a href="#use-cases">5. 基本應用場景</a>
+          <a href="#protocols">6. 常見管理介面與協定</a>
+          <a href="#quickref">7. 速查表</a>
+        </div>
+      </nav>
+
+      <main>
+        <section id="server-types" data-accent="cyan">
+          <div class="section-head">
+            <span class="section-index">SECTION 0</span>
+            <h2>伺服器種類</h2>
+          </div>
+          <p>BMC 的功能深度通常取決於伺服器等級、應用場景與硬體複雜度。因此，理解伺服器分類有助於判斷 BMC 的管理需求。</p>
+
+          <h3>依等級分類</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>等級</th><th>常見定位</th><th>主要特徵</th><th>典型應用</th></tr></thead>
+              <tbody>
+                <tr><td><span class="pill accent-green">低階 / Entry-level</span></td><td>小型企業、實驗室、分店</td><td>單 CPU、少量記憶體與儲存，管理功能較基本。</td><td>檔案伺服器、小型網站、NAS、測試機、AD/DNS。</td></tr>
+                <tr><td><span class="pill accent-blue">中階 / Mainstream</span></td><td>企業主力平台</td><td>1 到 2 顆 CPU、較多 DIMM、RAID、雙電源、完整 BMC。</td><td>虛擬化、資料庫、ERP、Web service、CI/CD。</td></tr>
+                <tr><td><span class="pill accent-violet">高階 / Enterprise</span></td><td>關鍵任務、高可靠性</td><td>多 CPU、大量記憶體、熱插拔、強 RAS、冗餘設計。</td><td>金融、電信、核心資料庫、SAP HANA、大型虛擬化。</td></tr>
+                <tr><td><span class="pill accent-rose">AI / HPC</span></td><td>GPU 或加速器運算</td><td>多 GPU、高功耗、高散熱、液冷、高速網路。</td><td>AI training、AI inference、HPC、科學運算。</td></tr>
+                <tr><td><span class="pill accent-amber">Edge Server</span></td><td>邊緣場域</td><td>短機身、耐溫、低功耗、遠端維運重要。</td><td>工廠、零售、基地台、影像分析、IoT gateway。</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>依外型分類</h3>
+          <div class="svg-diagram" aria-label="伺服器外型分類圖">
+            <svg viewBox="0 0 760 360" role="img" aria-labelledby="server-form-title">
+              <title id="server-form-title">Tower 到 Rack，並分支到 Blade、GPU Server 與 Edge Server</title>
+              <defs>
+                <marker id="arrow-form" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(224, 237, 249, 0.9)"></path>
+                </marker>
+              </defs>
+
+              <rect class="diagram-card" x="24" y="145" width="210" height="86"></rect>
+              <text class="diagram-title" x="129" y="183">Tower</text>
+              <text class="diagram-sub" x="129" y="210">低成本 / 小型部署</text>
+
+              <rect class="diagram-card main" x="290" y="145" width="180" height="86"></rect>
+              <text class="diagram-title" x="380" y="183">Rack</text>
+              <text class="diagram-sub" x="380" y="210">資料中心主流</text>
+
+              <rect class="diagram-card" x="550" y="22" width="170" height="86"></rect>
+              <text class="diagram-title" x="635" y="58">Blade / Modular</text>
+              <text class="diagram-sub" x="635" y="85">高密度集中管理</text>
+
+              <rect class="diagram-card" x="550" y="145" width="170" height="86"></rect>
+              <text class="diagram-title" x="635" y="183">GPU Server</text>
+              <text class="diagram-sub" x="635" y="210">AI / HPC</text>
+
+              <rect class="diagram-card" x="550" y="268" width="170" height="86"></rect>
+              <text class="diagram-title" x="635" y="304">Edge Server</text>
+              <text class="diagram-sub" x="635" y="331">邊緣與工業場域</text>
+
+              <path class="diagram-line" marker-end="url(#arrow-form)" d="M 234 188 L 288 188"></path>
+              <path class="diagram-line" marker-end="url(#arrow-form)" d="M 470 188 L 548 188"></path>
+              <path class="diagram-line" marker-end="url(#arrow-form)" d="M 422 145 C 470 82, 495 58, 548 58"></path>
+              <path class="diagram-line" marker-end="url(#arrow-form)" d="M 422 231 C 470 294, 495 311, 548 311"></path>
+            </svg>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>類型</th><th>說明</th><th>優點</th><th>限制</th></tr></thead>
+              <tbody>
+                <tr><td>Tower Server</td><td>外型類似大型桌機，可放置於辦公室或小型機房。</td><td>成本低、噪音較低、維護容易。</td><td>不適合大量部署，空間效率較低。</td></tr>
+                <tr><td>Rack Server</td><td>放入標準 19 吋機櫃，常見 1U、2U、4U。</td><td>資料中心主流，擴充彈性好。</td><td>需要機櫃、機房、散熱與線材管理。</td></tr>
+                <tr><td>Blade Server</td><td>多片 blade 插入同一 chassis，共用電源、散熱與網路背板。</td><td>高密度、集中管理、線材較少。</td><td>chassis 成本高，平台綁定度高。</td></tr>
+                <tr><td>Modular Server</td><td>多節點或模組化設計，可依 workload 組合。</td><td>適合雲端、大規模或特殊部署。</td><td>架構複雜，維護方式依廠商差異大。</td></tr>
+                <tr><td>GPU Server</td><td>通常為 2U、4U、8U，搭載多張 GPU 或 accelerator。</td><td>AI/HPC 運算能力高。</td><td>功耗、散熱、成本與 BMC 管理複雜度高。</td></tr>
+                <tr><td>Edge / Rugged Server</td><td>部署在邊緣、工業、戶外或空間受限環境。</td><td>可在較嚴苛環境運作，遠端維運價值高。</td><td>擴充性通常較低。</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>主流廠商與供應鏈角色</h3>
+          <div class="grid cols-3">
+            <div class="tile tone-blue"><h4>國際品牌 OEM</h4><p>Dell Technologies、HPE、Lenovo、Cisco、Fujitsu。</p></div>
+            <div class="tile tone-orange"><h4>高密度 / AI 伺服器</h4><p>Supermicro、Gigabyte、ASUS、ASRock Rack、QCT。</p></div>
+            <div class="tile tone-blue"><h4>中國與亞洲供應商</h4><p>Inspur / IEIT Systems、Huawei、xFusion、Sugon、H3C。</p></div>
+            <div class="tile tone-teal"><h4>ODM / 雲端白牌</h4><p>Quanta、Wiwynn、Inventec、Foxconn、MiTAC、Celestica。</p></div>
+            <div class="tile tone-orange"><h4>CPU / 平台核心供應商</h4><p>Intel、AMD、Ampere、NVIDIA、ARM ecosystem。</p></div>
+            <div class="tile tone-cyan"><h4>BMC SoC 供應商</h4><p>ASPEED、Nuvoton。</p></div>
+          </div>
+
+          <h3>應用區別</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>應用</th><th>常見伺服器類型</th><th>重點</th></tr></thead>
+              <tbody>
+                <tr><td>Web / App Server</td><td>1U / 2U rack，中階平台即可。</td><td>網路、CPU、可靠性、水平擴充。</td></tr>
+                <tr><td>Database</td><td>中高階 2U / 4U。</td><td>記憶體、NVMe、RAID、備援與低延遲。</td></tr>
+                <tr><td>Virtualization</td><td>中高階 2 socket server。</td><td>CPU core、RAM、網路、儲存與 VM density。</td></tr>
+                <tr><td>Storage Server</td><td>2U / 4U 多硬碟機型。</td><td>硬碟槽、HBA/RAID、散熱、資料保護。</td></tr>
+                <tr><td>AI Training</td><td>4U / 8U GPU server。</td><td>GPU 數量、PCIe/NVLink、高速網路、液冷。</td></tr>
+                <tr><td>AI Inference</td><td>GPU server 或 edge server。</td><td>延遲、功耗、部署位置、服務穩定性。</td></tr>
+                <tr><td>Telecom / Edge</td><td>Edge / rugged server。</td><td>遠端管理、耐溫、短機身、長時間無人值守。</td></tr>
+                <tr><td>HPC</td><td>高密度 CPU/GPU server。</td><td>高速網路、平行運算、散熱與排程系統。</td></tr>
+                <tr><td>小型辦公室</td><td>Tower / entry rack。</td><td>成本、噪音、維護便利性與基本備份。</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>不同等級伺服器對 BMC 的需求</h3>
+          <div class="grid cols-5">
+            <div class="tile tone-green"><h4>低階</h4><p>遠端開關機、sensor、event log、基礎 Web UI。</p></div>
+            <div class="tile tone-blue"><h4>中階</h4><p>Redfish、IPMI、firmware update、SOL、KVM、fan control。</p></div>
+            <div class="tile tone-violet"><h4>高階</h4><p>冗餘電源、熱插拔、故障隔離、RAS event、完整 telemetry。</p></div>
+            <div class="tile tone-rose"><h4>AI / HPC</h4><p>GPU telemetry、PCIe topology、液冷、MCTP/PLDM 裝置管理。</p></div>
+            <div class="tile tone-amber"><h4>Edge</h4><p>遠端復原、watchdog、網路自癒、低頻寬管理、安全更新。</p></div>
+          </div>
+          <div class="callout">伺服器越高階，BMC 越不只是看 sensor，而是整台機器的遠端維運、韌體更新、故障診斷與平台管理中心。</div>
+        </section>
+
+        <section id="ai-rack" data-accent="orange">
+          <div class="section-head">
+            <span class="section-index">SECTION 1</span>
+            <h2>AI Rack 與高階 GPU 平台名詞</h2>
+          </div>
+          <p>AI Rack 是針對 AI training / inference 設計的 <strong>整櫃級系統架構</strong>，不是單一零件，也不是單純一台伺服器。隨著功耗、散熱與高速互連規模提高，BMC 或 rack manager 需要管理 GPU tray、switch、retimer、CXL device、液冷系統等元件。</p>
+
+          <h3>系統層級</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>名詞</th><th>層級</th><th>說明</th></tr></thead>
+              <tbody>
+                <tr><td>GPU Server</td><td>單台伺服器</td><td>一台機器內包含 CPU、GPU、記憶體、網卡與 BMC。</td></tr>
+                <tr><td>GPU Tray</td><td>模組</td><td>承載 GPU 的抽屜式模組，常見於高密度 AI server。</td></tr>
+                <tr><td>AI Rack</td><td>整櫃系統架構</td><td>一個 rack 內整合 compute node、GPU tray、switch、power shelf、液冷設備與 rack manager。</td></tr>
+                <tr><td>Data Center</td><td>多櫃 / 機房</td><td>多個 rack 組成 cluster 或資料中心。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">AI Rack 是 rack-scale architecture，重點在於整櫃電源、散熱、高速互連與模組化維運。</div>
+
+          <h3>常見名詞</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>名詞</th><th>說明</th><th>BMC / 管理控制器關聯</th></tr></thead>
+              <tbody>
+                <tr><td>AI Rack</td><td>針對 AI training / inference 設計的整櫃系統。</td><td>管理整櫃電源、散熱、GPU、網路與故障事件。</td></tr>
+                <tr><td>GPU Tray</td><td>承載 GPU 的抽屜式模組。</td><td>偵測插拔、GPU 狀態、溫度、功耗、故障。</td></tr>
+                <tr><td>Switch</td><td>PCIe switch、NVLink switch、Ethernet switch、InfiniBand switch。</td><td>監控 link、port、溫度、錯誤計數、firmware。</td></tr>
+                <tr><td>Retimer</td><td>PCIe / CXL 高速訊號重整晶片。</td><td>監控 link health、錯誤計數、溫度、firmware。</td></tr>
+                <tr><td>CXL</td><td>Compute Express Link，基於 PCIe 的高速互連協定。</td><td>管理 CXL memory device、錯誤事件、溫度與韌體。</td></tr>
+                <tr><td>Liquid Cooling</td><td>液冷系統，包含 cold plate、CDU、pump、valve、flow sensor、leak sensor。</td><td>監控水溫、流量、壓力、泵浦、閥門、漏液。</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>AI Rack 的概念架構</h3>
+          <div class="rack-diagram">
+            <div class="rack-column">
+              <div class="label-box">Compute Node</div>
+              <div class="label-box">Network Switch<br>Ethernet / InfiniBand</div>
+              <div class="label-box">Power Shelf</div>
+            </div>
+            <div class="rack-center">
+              <div class="label-box">AI Rack</div>
+              <div class="label-box">GPU Tray</div>
+              <div class="label-box">GPU / Accelerator</div>
+              <div class="label-box">NVLink / PCIe Switch</div>
+              <div class="label-box">PCIe / CXL Retimer</div>
+            </div>
+            <div class="rack-column">
+              <div class="label-box">CDU / Liquid Cooling</div>
+              <div class="label-box">Cold Plate</div>
+              <div class="label-box">Rack Manager / BMC</div>
+            </div>
+          </div>
+
+          <h3>Switch 的種類</h3>
+          <div class="grid cols-2">
+            <div class="tile tone-cyan"><h4>PCIe Switch</h4><p>擴充 CPU 對 GPU、NVMe、DPU、accelerator 的連接；管理 link width/speed、錯誤計數、溫度、firmware。</p></div>
+            <div class="tile tone-orange"><h4>NVLink Switch</h4><p>提供 NVIDIA GPU 間高頻寬互連；管理 fabric 狀態、link health、溫度、錯誤事件。</p></div>
+            <div class="tile tone-teal"><h4>Ethernet Switch</h4><p>資料網路或管理網路；管理 port link、VLAN、溫度、firmware。</p></div>
+            <div class="tile tone-violet"><h4>InfiniBand Switch</h4><p>AI/HPC cluster 低延遲高速網路；管理 fabric health、port state、cable、錯誤計數。</p></div>
+          </div>
+
+          <h3>Liquid Cooling 常見元件</h3>
+          <div class="grid cols-3">
+            <div class="tile tone-cyan"><h4>Cold Plate</h4><p>CPU/GPU 導熱模組；管理進出水溫與熱交換效率。</p></div>
+            <div class="tile tone-green"><h4>Coolant</h4><p>冷卻液；管理溫度、壓力與流量。</p></div>
+            <div class="tile tone-green"><h4>Pump</h4><p>冷卻液循環泵浦；管理轉速、故障與冗餘狀態。</p></div>
+            <div class="tile tone-amber"><h4>Valve</h4><p>流量或流向控制閥；管理開關狀態、控制命令與異常狀態。</p></div>
+            <div class="tile tone-rose"><h4>Flow / Leak Sensor</h4><p>流速與漏液感測；偵測流量不足、堵塞與漏液告警。</p></div>
+            <div class="tile tone-green"><h4>CDU</h4><p>Coolant Distribution Unit；管理進出水溫、壓力、pump、alarm。</p></div>
+          </div>
+
+          <h3>對 BMC 的意義</h3>
+          <ul>
+            <li>GPU / accelerator 溫度、功耗、錯誤事件。</li>
+            <li>PCIe / NVLink / InfiniBand 高速互連狀態。</li>
+            <li>retimer、switch、CXL device 的 link health 與 firmware。</li>
+            <li>GPU tray、power shelf、fan module、liquid cooling module 插拔與故障。</li>
+            <li>液冷流量、壓力、漏液與保護動作。</li>
+            <li>整櫃 power budget、thermal policy、降載與故障隔離。</li>
+          </ul>
+          <div class="callout">AI 平台越高密度，BMC 越接近整櫃級健康監控與保護系統。</div>
+        </section>
+
+        <section id="bmc-intro" data-accent="blue">
+          <div class="section-head">
+            <span class="section-index">SECTION 2</span>
+            <h2>BMC 是什麼</h2>
+          </div>
+          <p><strong>BMC</strong> 是 <strong>Baseboard Management Controller</strong>，中文常譯為 <strong>基板管理控制器</strong>。它是獨立於主機 CPU 的管理晶片，常見於 server、storage、network appliance、AI server、telecom equipment 等需要遠端維運的設備。</p>
+          <div class="grid cols-2">
+            <div class="tile tone-blue"><h4>獨立管理控制器</h4><p>即使 host CPU 未開機，BMC 仍可透過 standby power 運作。</p></div>
+            <div class="tile tone-green"><h4>硬體監控中心</h4><p>讀取溫度、電壓、風扇、電源、事件紀錄等硬體狀態。</p></div>
+            <div class="tile tone-teal"><h4>遠端維運入口</h4><p>提供 Web UI、Redfish、IPMI、KVM、SOL、遠端開關機等功能。</p></div>
+            <div class="tile tone-violet"><h4>韌體更新橋樑</h4><p>可更新 BMC firmware、BIOS/UEFI、CPLD、FPGA、SSD/NIC firmware。</p></div>
+          </div>
+          <div class="callout">BMC 是主機板上的獨立管理控制器，負責設備管理、監控、維護與故障恢復。</div>
+
+          <h3>CPLD 是什麼</h3>
+          <p><strong>CPLD</strong> 是 <strong>Complex Programmable Logic Device</strong>，屬於可程式化邏輯元件。它通常放在主機板、server card、power board 或模組上，以硬體邏輯和狀態機處理需要<strong>快速、確定性高、即使主要軟體尚未啟動也必須運作</strong>的 Board-Level 控制工作。</p>
+          <div class="grid cols-3">
+            <div class="tile tone-amber"><h4>Power / Reset Sequencing</h4><p>依時序控制 power rail enable、power good、reset release 與關機流程，避免元件在電源尚未穩定時啟動。一般順序為 standby power → CPLD → BMC BootROM → U-Boot，因此 CPLD 通常早於 U-Boot 運作，實際仍依平台設計而定。</p></div>
+            <div class="tile tone-cyan"><h4>Glue Logic 與訊號整合</h4><p>整合 GPIO、presence、fault、interrupt、strap、mux 與 LED 等離散訊號，補足不同晶片介面之間的 Board-Level 邏輯。</p></div>
+            <div class="tile tone-violet"><h4>Board-Level 狀態與保護</h4><p>即時偵測異常條件、鎖存 fault、保存簡單狀態，並在必要時直接觸發 reset、power off 或告警。</p></div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>項目</th><th>BMC</th><th>CPLD</th></tr></thead>
+              <tbody>
+                <tr><td>核心角色</td><td>執行韌體與管理服務，負責監控、決策、事件紀錄、網路管理與遠端維運。</td><td>執行可程式化硬體邏輯，負責低延遲、確定性的 Board-Level 控制與訊號整合。</td></tr>
+                <tr><td>典型工作</td><td>Redfish/IPMI、sensor、SEL、KVM/SOL、inventory、firmware update。</td><td>Power/reset sequencing、GPIO 邏輯、mux、presence/fault、LED、POST code 或 strap 控制。</td></tr>
+                <tr><td>常見連接</td><td>透過 I2C/SMBus、GPIO、JTAG、SPI 或其他管理介面讀取狀態、下達命令及更新 CPLD image。</td><td>直接連接 power controller、CPU/PCH、FPGA、卡槽與各種 sideband 訊號，並將狀態回報給 BMC。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">分工心智模型：CPLD 像 Board-Level 即時邏輯管家，負責 power、reset 與離散訊號的確定性控制；BMC 像管理中樞，負責策略、紀錄、對外管理與韌體更新。CPLD 不取代 BMC，兩者通常互相配合。</div>
+
+          <h3>SMC 是什麼</h3>
+          <p>這裡的 <strong>SMC</strong> 指 ASPEED <strong>Satellite Management Controller</strong>，屬於 server management 用的 <strong>Bridge IC</strong>。以 <strong>AST1040 SMC</strong> 為例，它是第二代 Satellite Management Controller，用於可擴充的 multi-node server management、OCP Streaming Boot 架構，以及透過 USB 進行 OBMF-ICP 管理連線。</p>
+          <div class="grid cols-3">
+            <div class="tile tone-blue"><h4>Satellite Controller</h4><p>作為 BMC 周邊的 satellite / bridge controller，協助擴展多節點與多模組管理能力。</p></div>
+            <div class="tile tone-violet"><h4>新世代管理橋接</h4><p>支援 OCP Streaming Boot 與 OBMF-ICP over USB，適合新世代 rack-scale server 架構。</p></div>
+            <div class="tile tone-rose"><h4>安全與控制</h4><p>AST1040 具備 Caliptra 2.x integrated RoT、physical anti-tamper，並提供多節點管理所需的控制與連線能力。</p></div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>項目</th><th>BMC</th><th>SMC</th></tr></thead>
+              <tbody>
+                <tr><td>定位</td><td>整機或節點的主要管理控制器，通常具備網路管理介面與完整管理韌體。</td><td>Satellite Management Controller / Bridge IC，輔助 BMC 擴展 multi-node、模組化與 rack-scale 管理。</td></tr>
+                <tr><td>常見功能</td><td>Redfish/IPMI、KVM/SOL、sensor、event log、firmware update、遠端維運。</td><td>OCP Streaming Boot、OBMF-ICP over USB、LTPI 連線、RoT 安全能力、多節點管理橋接。</td></tr>
+                <tr><td>代表晶片</td><td>ASPEED AST2600、AST2700 等 BMC SoC。</td><td>ASPEED AST1040 SMC，內建 ARM Cortex-M4、Flash/RAM、USB、LTPI 與 Caliptra RoT。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">簡單理解：BMC 是主要管理中樞；AST1040 這類 SMC 是 BMC 周邊的 satellite / bridge controller，用來把新世代多節點、模組化與 rack-scale server 的管理連線擴展出去。</div>
+
+          <h3>BIC 與 SMC 的關係</h3>
+          <p><strong>BIC</strong> 是 <strong>Bridge IC</strong>，代表晶片如 ASPEED <strong>AST1030 / AST1035</strong>。它是 BMC 的 local agent / bridge，常放在 server card、node、tray 或模組上，協助 BMC 延伸多節點與模組化管理能力。</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>項目</th><th>BIC</th><th>SMC</th></tr></thead>
+              <tbody>
+                <tr><td>代表晶片</td><td>AST1030、AST1035</td><td>AST1040</td></tr>
+                <tr><td>核心角色</td><td>BMC 的 Bridge IC / local agent。</td><td>新一代 Satellite Management Controller，延續 bridge/local-agent 角色。</td></tr>
+                <tr><td>平台重點</td><td>多節點 server、server card、模組化系統管理延伸。</td><td>multi-node server management、OCP Streaming Boot、OBMF-ICP over USB、LTPI、Caliptra RoT。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">嚴謹理解：SMC AST1040 不是單純把 BIC 改名，而是延續 BIC 的橋接/代理角色，並加入新世代 OCP、rack-scale、boot fabric 與安全管理能力。</div>
+
+          <h3>BMC 與 SMC 怎麼連接溝通</h3>
+          <p>BMC 與 AST1040 SMC 的連接通常會分成 <strong>管理資料通道</strong> 與 <strong>硬體控制 sideband</strong>。資料通道負責韌體、管理訊息與大量狀態資料；sideband 則負責 reset、interrupt、presence、boot strap、錯誤告警等即時硬體訊號。</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>連接方式</th><th>角色</th><th>常見用途</th></tr></thead>
+              <tbody>
+                <tr><td>OBMF-ICP over USB</td><td>主要管理資料通道</td><td>BMC 透過 USB 與 SMC 交換 OBMF-ICP 管理資料，可用於模組管理、韌體流程或較高層的管理通訊。</td></tr>
+                <tr><td>LTPI</td><td>低腳位數平台介面延伸</td><td>把遠端節點或模組上的低速平台訊號延伸回管理端，例如 GPIO 類控制、狀態、告警或平台 sideband 訊號。</td></tr>
+                <tr><td>I2C / SMBus</td><td>低速管理匯流排</td><td>讀取 board ID、FRU、sensor、EEPROM、簡單狀態暫存器，或和板上 MCU/CPLD 做低速控制。</td></tr>
+                <tr><td>GPIO / Interrupt</td><td>即時硬體 sideband</td><td>reset、power good、presence detect、fault、alert、boot done、tamper 等單一事件或控制訊號。</td></tr>
+                <tr><td>UART / Debug Port</td><td>除錯與製造支援</td><td>開發、bring-up、工廠測試或故障分析時使用，不一定作為正式管理資料通道。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">實務心智模型：BMC 負責對外管理與決策；SMC 靠近被管理的節點或模組，負責橋接與現場訊號收斂。兩者之間通常以 USB/LTPI 承載主要管理連線，再搭配 I2C/SMBus、GPIO、interrupt 等 sideband 訊號完成硬體控制。</div>
+
+          <h3>對應新世代 AI 晶片與 Rack-scale 平台</h3>
+          <p>在 NVIDIA Grace Blackwell、GB200/GB300 NVL72、AI rack、DPU / SuperNIC 等新世代平台中，管理架構逐漸從「一顆 BMC 管整台 server」演進成 <strong>多控制器分層管理</strong>。BMC 仍是對外的主要 out-of-band 管理入口，但 tray、switch、power shelf、DPU、液冷模組等子系統常會有自己的管理控制器。</p>
+          <div class="grid cols-3">
+            <div class="tile tone-orange"><h4>Compute Tray / HMC</h4><p>GPU compute tray 可能搭配 Host Module Controller，協助 BMC 管理 Grace CPU、Blackwell GPU、tray inventory、LED、reset 與子板狀態。</p></div>
+            <div class="tile tone-blue"><h4>BMC + SMC 拓撲</h4><p>新平台可由 BMC SoC 搭配 AST1040 這類 SMC，將管理面延伸到多節點、GPU tray、boot fabric 與模組化子系統。</p></div>
+            <div class="tile tone-amber"><h4>Power / Cooling Controller</h4><p>Power shelf、PMC、CDU、pump、valve、flow/leak sensor 會形成獨立控制迴路，再把健康狀態與告警回報給 BMC 或 rack manager。</p></div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>新世代元件</th><th>可能的管理控制器</th><th>和 BMC / SMC 的關係</th></tr></thead>
+              <tbody>
+                <tr><td>Grace Blackwell compute tray</td><td>BMC、HMC、board MCU、CPLD</td><td>BMC 對外提供 Web/Redfish；HMC/SMC 類控制器負責 tray 內部電源、reset、LED、inventory 與狀態彙整。</td></tr>
+                <tr><td>Blackwell GPU / accelerator</td><td>GPU 內部管理韌體、driver telemetry、板上 MCU</td><td>GPU telemetry 可由 host in-band 工具讀取，也可透過 BMC/OOB 路徑彙整到管理平台。</td></tr>
+                <tr><td>BlueField DPU / SuperNIC</td><td>Device BMC、secure management firmware、ERoT</td><td>DPU 也可能具備自己的 BMC，由主機 BMC 或遠端管理控制器透過 Redfish / OOB 網路管理。</td></tr>
+                <tr><td>NVLink / Ethernet switch tray</td><td>Switch BMC、switch OS、management MCU</td><td>交換器不再只是被動元件，會有自己的 firmware、log、sensor 與 Redfish/CLI 管理面。</td></tr>
+                <tr><td>Power shelf / 液冷模組</td><td>PMC、CDU controller、pump/valve MCU</td><td>這些控制器偏向 SMC/PMC 角色，負責即時保護與控制，BMC 彙整狀態並對外呈現。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">新世代平台的心智模型：BMC 是對外管理入口；SMC/HMC/PMC/MCU 是分散在各模組上的現場控制器；Rack Manager 或資料中心管理軟體再把多台、多 tray、多 switch、多 power shelf 的資訊收斂成整櫃視角。</div>
+        </section>
+
+        <section id="bmc-position" data-accent="cyan">
+          <div class="section-head">
+            <span class="section-index">SECTION 3</span>
+            <h2>BMC 在系統中的位置</h2>
+          </div>
+          <div class="rack-diagram">
+            <div class="rack-column">
+              <div class="label-box">維運人員 / 管理平台</div>
+              <div class="label-box">Web / Redfish / IPMI</div>
+              <div class="label-box">管理網路</div>
+            </div>
+            <div class="rack-center">
+              <div class="label-box">BMC SoC</div>
+              <div class="label-box">Linux / OpenBMC</div>
+              <div class="label-box">D-Bus / Services</div>
+            </div>
+            <div class="rack-column">
+              <div class="label-box">Sensors / PMBus</div>
+              <div class="label-box">Fan / GPIO / SGPIO</div>
+              <div class="label-box">Host CPU / PCH</div>
+              <div class="label-box">NIC / PSU / CPLD / FPGA / SSD</div>
+              <div class="label-box">KVM / Serial Console</div>
+            </div>
+          </div>
+          <p>BMC 通常具備 CPU core、DDR、Flash、Ethernet MAC、GPIO、I2C、UART、PWM、ADC、SPI、PCIe 或 eSPI 等介面，並透過這些介面控制主板與周邊裝置。</p>
+        </section>
+
+        <section id="bmc-functions" data-accent="green">
+          <div class="section-head">
+            <span class="section-index">SECTION 4</span>
+            <h2>基礎功能</h2>
+          </div>
+          <div class="grid cols-3">
+            <div class="tile tone-amber"><h4>電源與開關機控制</h4><p>遠端開關機、重開機、power button/reset button 模擬、AC power restore policy、power good / power fault 監控。</p></div>
+            <div class="tile tone-green"><h4>感測器監控</h4><p>溫度、電壓、電流、功耗、風扇轉速、機箱入侵狀態。</p></div>
+            <div class="tile tone-rose"><h4>事件紀錄</h4><p>sensor threshold crossing、power fault、fan fault、boot failure、watchdog timeout、host crash。</p></div>
+            <div class="tile tone-teal"><h4>遠端 Console 與 KVM</h4><p>SOL、KVM、Virtual Media，用於遠端維運、OS 安裝與故障救援。</p></div>
+            <div class="tile tone-violet"><h4>韌體更新</h4><p>BMC image、BIOS/UEFI、CPLD/FPGA、PSU、NIC、SSD/NVMe firmware。</p></div>
+            <div class="tile tone-rose"><h4>更新風險控制</h4><p>版本管理、簽章驗證、rollback、A/B image、失敗恢復。</p></div>
+          </div>
+
+          <h3>感測器類型</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>類型</th><th>來源</th><th>用途</th></tr></thead>
+              <tbody>
+                <tr><td>Temperature</td><td>CPU、DIMM、VR、板上熱敏電阻</td><td>過熱保護、風扇策略</td></tr>
+                <tr><td>Voltage</td><td>VR、PSU、主板 rail</td><td>電源異常偵測</td></tr>
+                <tr><td>Current / Power</td><td>PMBus、PSU、hot-swap controller</td><td>功耗管理</td></tr>
+                <tr><td>Fan Tach</td><td>風扇回饋訊號</td><td>風扇故障偵測</td></tr>
+                <tr><td>Intrusion</td><td>chassis switch</td><td>機箱入侵紀錄</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="use-cases" data-accent="teal">
+          <div class="section-head">
+            <span class="section-index">SECTION 5</span>
+            <h2>基本應用場景</h2>
+          </div>
+          <div class="grid cols-2">
+            <div class="tile tone-teal"><h4>資料中心遠端維運</h4><p>查詢硬體健康狀態、遠端重開機、讀取 event log、查看 boot console、掛載 OS installer、更新 firmware。</p></div>
+            <div class="tile tone-green"><h4>量產測試與 Board-Level 驗證</h4><p>自動上下電循環、sensor sweep、fan table 驗證、GPIO/I2C/UART 測試、FRU/EEPROM 寫入。</p></div>
+            <div class="tile tone-rose"><h4>故障診斷與恢復</h4><p>讀取 POST code、擷取 console log、檢查電源 rail、觸發 crash dump、BIOS 救援。</p></div>
+            <div class="tile tone-blue"><h4>大規模管理平台整合</h4><p>透過 Redfish 整合 inventory、sensor telemetry、power control、firmware update、account privilege、event subscription。</p></div>
+          </div>
+        </section>
+
+        <section id="protocols" data-accent="violet">
+          <div class="section-head">
+            <span class="section-index">SECTION 6</span>
+            <h2>常見管理介面與協定</h2>
+          </div>
+          <h3>DMTF 是什麼</h3>
+          <p><strong>DMTF</strong> 是 <strong>Distributed Management Task Force</strong>，為制定 IT 基礎架構、伺服器、資料中心與平台管理標準的產業標準組織。</p>
+          <div class="callout">DMTF 定義管理標準，BMC 實作這些標準，管理平台再透過這些標準控制與監控伺服器。</div>
+
+          <h3>OCP 與 OBMF-ICP 的定位</h3>
+          <p><strong>OCP</strong> 是 <strong>Open Compute Project</strong>，由資料中心與硬體生態系共同推動開放硬體規格。相較於 DMTF 偏向管理資料模型與協定標準，OCP 更偏向 rack、server、tray、power、cooling、boot 與可維修性等開放硬體平台規格與實作生態。</p>
+          <div class="grid cols-3">
+            <div class="tile tone-violet"><h4>OCP</h4><p>開放硬體與資料中心平台規格生態，常見焦點包含 rack-scale、模組化節點、電源、散熱、管理與可維修性。</p></div>
+            <div class="tile tone-blue"><h4>OBMF-ICP</h4><p>可理解為 Open Boot Management Framework 的 inter-control-plane 管理通道，用於 BMC 與 SMC / satellite controller 之間交換 boot、管理與控制相關資料。</p></div>
+            <div class="tile tone-amber"><h4>Streaming Boot</h4><p>在 OCP Streaming Boot 架構中，boot image 或 boot flow 可透過管理/控制平面被協調，適合無本地儲存或模組化的大規模平台。</p></div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>名詞</th><th>重點</th><th>在 BMC / SMC 架構中的意義</th></tr></thead>
+              <tbody>
+                <tr><td>OCP</td><td>Open Compute Project，開放資料中心硬體規格與生態。</td><td>定義或推動 rack-scale、模組化、可互通與易維護的平台設計方向。</td></tr>
+                <tr><td>OCP Streaming Boot</td><td>以集中式或網路化方式協調 boot image / boot flow。</td><td>SMC 可協助節點或模組參與 boot fabric，讓 BMC / rack manager 能管理開機流程與狀態。</td></tr>
+                <tr><td>OBMF-ICP over USB</td><td>BMC 與 SMC 之間的高層管理資料通道，實體媒介常見為 USB。</td><td>承載 OBMF-ICP 訊息，交換模組狀態、boot/control 資訊、韌體流程資料與管理命令。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">簡單理解：DMTF 偏向「管理資料與協定怎麼標準化」；OCP 偏向「開放硬體平台與 rack-scale 架構怎麼設計」；OBMF-ICP over USB 則是 BMC 與 SMC 之間承載 boot / control 管理資料的重要通道。</div>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>標準</th><th>說明</th></tr></thead>
+              <tbody>
+                <tr><td>Redfish</td><td>現代伺服器管理 API，使用 RESTful + JSON。</td></tr>
+                <tr><td>PLDM</td><td>Platform Level Data Model，用於描述 sensor、FRU、firmware update 等平台管理資料。</td></tr>
+                <tr><td>MCTP</td><td>Management Component Transport Protocol，用於在 SMBus、I3C、PCIe、USB 等媒介上傳輸管理訊息。</td></tr>
+                <tr><td>SPDM</td><td>Security Protocol and Data Model，用於裝置身份驗證、量測驗證與安全 session。</td></tr>
+                <tr><td>SMBIOS</td><td>System Management BIOS，用於描述 BIOS、主板、CPU、DIMM、序號等系統硬體資訊。</td></tr>
+                <tr><td>CIM</td><td>Common Information Model，較早期的管理資料模型。</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>管理介面比較</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>介面 / 協定</th><th>特色</th><th>常見用途</th></tr></thead>
+              <tbody>
+                <tr><td>Redfish</td><td>DMTF 定義，RESTful、JSON、現代化標準</td><td>資料中心管理、自動化平台</td></tr>
+                <tr><td>IPMI</td><td>傳統 server management 標準</td><td>舊系統相容、基本 power/sensor/event</td></tr>
+                <tr><td>PLDM</td><td>DMTF 定義，Platform Level Data Model</td><td>firmware update、sensor、FRU、host-BMC 溝通</td></tr>
+                <tr><td>MCTP</td><td>DMTF 定義，Management Component Transport Protocol</td><td>在 SMBus/I3C/PCIe/USB 等媒介上傳管理訊息</td></tr>
+                <tr><td>SPDM</td><td>DMTF 定義，Security Protocol and Data Model</td><td>裝置身份驗證、measurement、secure session</td></tr>
+                <tr><td>D-Bus</td><td>OpenBMC 內部 IPC</td><td>services 之間交換狀態與物件</td></tr>
+                <tr><td>SSH</td><td>shell access</td><td>開發、除錯、維運</td></tr>
+                <tr><td>Web UI</td><td>瀏覽器操作</td><td>手動管理與視覺化監控</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>MCTP / PLDM 定位</h3>
+          <div class="svg-diagram" aria-label="MCTP 與 PLDM 傳輸定位圖">
+            <svg viewBox="0 0 920 260" role="img" aria-labelledby="mctp-pldm-title">
+              <title id="mctp-pldm-title">BMC 透過 PLDM message，經 MCTP transport 與 PCIe VDM、SMBus、I3C、USB 等媒介與 managed device 溝通</title>
+              <defs>
+                <marker id="arrow-protocol" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(224, 237, 249, 0.9)"></path>
+                </marker>
+              </defs>
+
+              <rect class="diagram-card main" x="30" y="96" width="130" height="70"></rect>
+              <text class="diagram-title" x="95" y="137">BMC</text>
+
+              <rect class="diagram-card" x="300" y="96" width="190" height="70"></rect>
+              <text class="diagram-title" x="395" y="137">MCTP Transport</text>
+
+              <rect class="diagram-card" x="610" y="96" width="240" height="70"></rect>
+              <text class="diagram-title" x="730" y="137">Managed Device</text>
+
+              <rect class="diagram-card" x="515" y="32" width="150" height="54"></rect>
+              <text class="diagram-sub" x="590" y="56">PCIe VDM / SMBus</text>
+              <text class="diagram-sub" x="590" y="76">I3C / USB</text>
+
+              <rect class="diagram-card" x="178" y="54" width="104" height="36"></rect>
+              <text class="diagram-sub" x="230" y="78">PLDM Message</text>
+
+              <rect class="diagram-card" x="500" y="174" width="118" height="36"></rect>
+              <text class="diagram-sub" x="559" y="198">Response</text>
+
+              <path class="diagram-line" marker-end="url(#arrow-protocol)" d="M 160 122 C 205 92, 245 86, 298 108"></path>
+              <path class="diagram-line" marker-end="url(#arrow-protocol)" d="M 490 118 C 545 92, 570 88, 608 108"></path>
+              <path class="diagram-line" marker-end="url(#arrow-protocol)" d="M 610 154 C 550 190, 515 196, 490 154"></path>
+              <path class="diagram-line" marker-end="url(#arrow-protocol)" d="M 300 154 C 240 188, 195 184, 160 146"></path>
+            </svg>
+          </div>
+
+          <h3>SPDM 的定位</h3>
+          <p><strong>SPDM</strong> 是 <strong>Security Protocol and Data Model</strong>，用於平台內部元件的身份驗證、量測驗證與安全通道建立。常見 requester 是 BMC 或 host，responder 則可能是 NIC、GPU、CXL device、SSD、retimer、accelerator 等裝置。</p>
+          <div class="grid cols-2">
+            <div class="tile tone-rose"><h4>Certificate</h4><p>驗證裝置身份，確認裝置是否來自可信任廠商或平台。</p></div>
+            <div class="tile tone-violet"><h4>Measurement</h4><p>驗證裝置 firmware、boot state、configuration 是否符合安全政策。</p></div>
+            <div class="tile tone-rose"><h4>Challenge</h4><p>確認裝置持有對應私鑰，避免偽裝裝置。</p></div>
+            <div class="tile tone-blue"><h4>Secure Session</h4><p>建立具加密與完整性保護的管理通道。</p></div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>名詞</th><th>角色</th></tr></thead>
+              <tbody>
+                <tr><td>MCTP</td><td>管理訊息的傳輸層。</td></tr>
+                <tr><td>PLDM</td><td>管理資料模型，例如 sensor、FRU、firmware update。</td></tr>
+                <tr><td>SPDM</td><td>安全驗證與安全 session。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">MCTP 解決訊息怎麼送，PLDM 解決資料怎麼表達，SPDM 解決裝置是否可信與通訊是否安全。</div>
+        </section>
+
+        <section id="quickref" data-accent="blue">
+          <div class="section-head">
+            <span class="section-index">SECTION 7</span>
+            <h2>速查表</h2>
+          </div>
+          <h3>BMC 核心心智模型</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>問題</th><th>答案</th></tr></thead>
+              <tbody>
+                <tr><td>BMC 管什麼？</td><td>電源、感測器、風扇、事件、console、firmware、遠端管理。</td></tr>
+                <tr><td>BMC 何時能工作？</td><td>只要 standby power 存在，通常 host 關機也能工作。</td></tr>
+                <tr><td>CPLD 和 BMC 差在哪？</td><td>CPLD 執行低延遲、確定性的 Board-Level 硬體邏輯，例如 power/reset sequencing、GPIO 與 fault 處理；BMC 執行管理韌體，負責監控、決策、紀錄與遠端維運。</td></tr>
+                <tr><td>SMC 和 BMC 差在哪？</td><td>BMC 是主要管理中樞；AST1040 這類 SMC 是 Satellite Management Controller / Bridge IC，用來擴展 multi-node、模組化與 rack-scale 管理連線。</td></tr>
+                <tr><td>OCP 在這裡指什麼？</td><td>Open Compute Project，偏向開放硬體規格與資料中心平台生態，不是單一 BMC 協定。</td></tr>
+                <tr><td>OBMF-ICP over USB 是什麼？</td><td>BMC 與 SMC / satellite controller 之間的高層管理資料通道，可承載 boot、控制、模組狀態與韌體流程相關訊息。</td></tr>
+                <tr><td>OpenBMC 對外主要 API？</td><td>Redfish。</td></tr>
+                <tr><td>OpenBMC 內部主要 IPC？</td><td>D-Bus。</td></tr>
+                <tr><td>OpenBMC 怎麼建構？</td><td>Yocto + BitBake。</td></tr>
+                <tr><td>新板子最常改哪裡？</td><td>DTS、machine config、sensor config、GPIO、fan policy、recipe。</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>名詞對照</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>名詞</th><th>說明</th></tr></thead>
+              <tbody>
+                <tr><td>BMC</td><td>Baseboard Management Controller，基板管理控制器。</td></tr>
+                <tr><td>CPLD</td><td>Complex Programmable Logic Device，可程式化邏輯元件；常負責 Board-Level power/reset sequencing、GPIO、mux、presence/fault、LED 與其他即時 sideband 控制。</td></tr>
+                <tr><td>SMC</td><td>Satellite Management Controller。以 ASPEED AST1040 為例，屬於 server management Bridge IC，用於 multi-node server management、OCP Streaming Boot 與 OBMF-ICP over USB。</td></tr>
+                <tr><td>BIC</td><td>Bridge IC。以 ASPEED AST1030 / AST1035 為例，是 BMC 的 local agent / bridge，用於延伸多節點與模組化 server 管理能力。</td></tr>
+                <tr><td>OCP</td><td>Open Compute Project，推動開放資料中心硬體、rack-scale 與模組化平台規格的產業生態。</td></tr>
+                <tr><td>OCP Streaming Boot</td><td>OCP 生態中的開機架構概念，讓 boot image / boot flow 可由管理或控制平面協調，適合 rack-scale 與模組化平台。</td></tr>
+                <tr><td>OBMF-ICP</td><td>Open Boot Management Framework 的 inter-control-plane 管理通道，可用於 BMC 與 SMC 之間交換 boot、控制、狀態與韌體流程資料。</td></tr>
+                <tr><td>Host</td><td>被 BMC 管理的主系統，例如 x86/ARM server。</td></tr>
+                <tr><td>NIC</td><td>Network Interface Controller / Card，網路介面控制器或網路卡，負責伺服器與外部網路之間的封包收發。</td></tr>
+                <tr><td>SoC</td><td>System on Chip，BMC 本身通常是一顆 SoC。</td></tr>
+                <tr><td>FRU</td><td>Field Replaceable Unit，可替換元件資訊。</td></tr>
+                <tr><td>SEL</td><td>System Event Log，系統事件紀錄。</td></tr>
+                <tr><td>SOL</td><td>Serial over LAN，透過網路存取序列埠。</td></tr>
+                <tr><td>KVM</td><td>Keyboard Video Mouse，遠端螢幕與輸入控制。</td></tr>
+                <tr><td>DMTF</td><td>Distributed Management Task Force，制定 Redfish、PLDM、MCTP、SMBIOS 等管理標準的產業組織。</td></tr>
+                <tr><td>Redfish</td><td>DMTF 定義的現代硬體管理 REST API。</td></tr>
+                <tr><td>IPMI</td><td>傳統平台管理介面。</td></tr>
+                <tr><td>PLDM</td><td>平台層資料模型。</td></tr>
+                <tr><td>MCTP</td><td>管理元件傳輸協定。</td></tr>
+                <tr><td>Yocto</td><td>建構客製化 Linux 發行版的框架。</td></tr>
+                <tr><td>BitBake</td><td>Yocto 使用的 build engine。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+    <footer>Generated from local BMC study notes. HTML version for visual reading.</footer>
+  </div>
+  <script>
+    const layout = document.getElementById("pageLayout");
+    const navToggle = document.getElementById("navToggle");
+
+    navToggle.addEventListener("click", () => {
+      const collapsed = layout.classList.toggle("nav-collapsed");
+      navToggle.setAttribute("aria-expanded", String(!collapsed));
+      navToggle.setAttribute("title", collapsed ? "展開目錄" : "收合目錄");
+    });
+  </script>
+</body>
+</html>

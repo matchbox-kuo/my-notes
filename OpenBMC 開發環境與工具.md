@@ -1,6 +1,6 @@
 # OpenBMC 開發環境與工具
 
-> 本文件整理 OpenBMC 開發環境與常用工具，涵蓋 `Yocto`、`BitBake`、交叉編譯、QEMU、`ConfigFS`、`Kconfig` 與 `Makefile`。重點在於各工具的定位、彼此的協作關係，以及實際開發流程中的使用時機。
+> 本文件整理 OpenBMC 開發環境與常用工具，涵蓋 `Yocto`、`BitBake`、交叉編譯、QEMU、`ConfigFS`、`Kconfig`、`Makefile`，以及 CI/CD 與 Jenkins。重點在於各工具的定位、彼此的協作關係，以及實際開發流程中的使用時機。
 
 ---
 
@@ -13,6 +13,7 @@
 - [5. QEMU 模擬與除錯實務](#5-qemu-模擬與除錯實務)
 - [6. ConfigFS：以檔案系統介面操作核心物件](#6-configfs用檔案系統外觀操作核心)
 - [7. Kconfig 與 Makefile 的協作關係](#7-kconfig-與-makefile-的協作關係)
+- [8. CI/CD 與 Jenkins](#8-cicd-與-jenkins)
 
 ---
 
@@ -447,6 +448,87 @@ obj-$(CONFIG_MCTP) += mctp.o
 
 ---
 
+## 8. CI/CD 與 Jenkins
+
+CI/CD 是將原始碼檢查、建置、測試、產物保存與部署流程自動化的方法；Jenkins 則是常用來執行這些流程的自動化平台。
+
+### 8.1 CI：持續整合
+
+**CI（Continuous Integration，持續整合）**是指開發者頻繁地將程式碼合併到共享版本庫，並由系統自動執行檢查。
+
+常見工作包括：
+
+- 檢查程式碼格式與靜態分析
+- 執行單元測試
+- 使用 BitBake 建置指定的 OpenBMC image 或 recipe
+- 驗證 patch、recipe 與 layer 是否能正確整合
+- 保存測試報告與建置紀錄
+
+CI 的主要目標是**盡早發現整合問題**，避免錯誤累積到開發後期才被發現。
+
+### 8.2 CD：持續交付或持續部署
+
+CD 常見有兩種解釋：
+
+| 名稱 | 說明 |
+|:--|:--|
+| **Continuous Delivery** | 持續交付；系統自動產生可發布的映像檔，但部署到測試板或正式環境前仍需人工核准 |
+| **Continuous Deployment** | 持續部署；通過所有檢查後，自動部署到目標環境，不需要人工核准 |
+
+對 BMC 韌體而言，部署可能包含：
+
+- 保存 OpenBMC image 與對應版本資訊
+- 將 image 發布到內部 artifact server
+- 更新測試機或實體 BMC 開發板
+- 執行開機、Redfish、IPMI、Web UI 或硬體功能測試
+- 通過審核後發布正式韌體
+
+由於韌體更新會影響實體硬體，實務上通常採用 **Continuous Delivery**，在燒錄或正式發布前保留人工核准步驟。
+
+### 8.3 Jenkins 的定位
+
+**Jenkins** 是可擴充的自動化伺服器，可在程式碼提交、Pull Request 或排程事件發生時啟動 CI/CD pipeline。
+
+Jenkins 本身不是 CI 或 CD 的定義，而是實作 CI/CD 流程的工具之一。它可以協調 Git、建置主機、測試環境與產物伺服器，依序執行各個工作階段。
+
+```mermaid
+flowchart LR
+    A[開發者提交程式碼] --> B[Git Repository]
+    B --> C[Jenkins Pipeline]
+    C --> D[格式與靜態檢查]
+    D --> E[BitBake 建置]
+    E --> F[QEMU 或自動化測試]
+    F --> G[保存 OpenBMC Image]
+    G --> H{部署核准}
+    H -->|核准| I[測試板或發布環境]
+    H -->|退回| J[修正程式碼]
+```
+
+### 8.4 Jenkins Pipeline 與 Jenkinsfile
+
+Jenkins pipeline 通常以版本庫中的 `Jenkinsfile` 描述，讓自動化流程與原始碼一起接受版本控制。
+
+一個 OpenBMC pipeline 可以包含：
+
+1. **Checkout**：取得原始碼與對應 branch。
+2. **Prepare**：載入 OpenBMC 建置環境與設定 layer。
+3. **Build**：執行 `bitbake <machine>-image` 或指定 recipe。
+4. **Test**：執行單元測試、QEMU 測試或實機測試。
+5. **Archive**：保存 image、log、測試報告與版本資訊。
+6. **Deploy**：經人工核准後，發布或更新測試設備。
+
+因此各工具的分工可以簡化為：
+
+| 元件 | 定位 |
+|:--|:--|
+| Git | 保存與管理原始碼版本 |
+| Yocto / BitBake | 建置 OpenBMC 韌體與軟體套件 |
+| Jenkins | 觸發並協調自動化 pipeline |
+| CI | 持續執行整合、建置與測試 |
+| CD | 將通過驗證的產物交付或部署到目標環境 |
+
+---
+
 ## 總結
 
 - `Yocto` 是建置平台，`BitBake` 是任務引擎。
@@ -455,3 +537,5 @@ obj-$(CONFIG_MCTP) += mctp.o
 - `DL_DIR` 與 `SSTATE_DIR` 影響下載重用、建置快取與整體開發效率。
 - `ConfigFS` 看似檔案系統，實際上是核心控制介面。
 - `Kconfig` 決定可選功能，`Makefile` 決定實際編譯目標。
+- CI 負責持續整合與驗證，CD 負責持續交付或持續部署。
+- Jenkins 可透過 `Jenkinsfile` 協調 OpenBMC 的建置、測試、產物保存與部署流程。

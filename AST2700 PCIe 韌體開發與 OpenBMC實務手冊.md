@@ -417,6 +417,74 @@ OpenBMC 通常將 MCTP/PLDM 處理放在 User-space Daemon，而非 Kernel 內�
 
 此分層可降低 Kernel 複雜度，並讓 PLDM 功能擴充集中於 User-space。
 
+#### 3.4.4 User-space、D-Bus 與 MCTP 路由分工
+
+在 OpenBMC 中，User-space 通常操作的是「管理語意」而不是直接操作某條硬體通路。例如 Redfish、Web UI 或其他服務可能只知道：
+
+```text
+我要查 /xyz/openbmc_project/inventory/.../nvme0 的 health
+我要讀某個 sensor
+我要對某個 firmware target 做 update
+```
+
+這些路徑屬於 **D-Bus object**，是 OpenBMC 對內呈現的管理模型。D-Bus object 背後的資料來源，可能是 sensor daemon 讀 I2C/I3C，也可能是 `pldmd` 對某個 MCTP EID 發 PLDM command。
+
+典型查詢流程如下：
+
+```text
+Redfish / Web UI / CLI
+  ↓
+OpenBMC service
+  ↓ D-Bus
+/xyz/openbmc_project/inventory/.../nvme0
+  ↓
+pldmd
+  ↓ PLDM command
+MCTP EID
+  ↓
+mctpd / kernel AF_MCTP
+  ↓
+PCIe VDM / MMBI / I2C / SMBus
+  ↓
+實體裝置
+```
+
+各層分工如下：
+
+| 層級 | 職責 |
+| :--- | :--- |
+| Redfish / Web UI / CLI | 發出管理請求，例如查詢 health、sensor、inventory 或 firmware 狀態。 |
+| D-Bus object | 呈現 OpenBMC 內部管理模型，例如 inventory、sensor、software、power state。 |
+| `pldmd` | 將 PLDM 語意映射到 D-Bus，也可依請求對特定 MCTP EID 發 PLDM command。 |
+| `mctpd` | 探索 endpoint、分配或記錄 EID、維護 MCTP network/interface/route。 |
+| kernel `AF_MCTP` | 根據已建立的 route，將 MCTP packet 送到對應底層 transport driver。 |
+| transport driver | 實際收送 PCIe VDM、MMBI、I2C、SMBus 等底層封包。 |
+
+因此，底層通路選擇不是由 `pldmd` 或 kernel 憑空決定，而是 route-driven：
+
+```text
+EID 8  -> MCTP network 1 -> PCIe VDM
+EID 20 -> MCTP network 2 -> I2C / SMBus
+EID 30 -> MCTP network 3 -> MMBI
+```
+
+`pldmd` 通常只需要知道要對哪個 EID 發 PLDM。`mctpd` 與平台設定負責建立 EID、network 與 interface 的對應關係；kernel `AF_MCTP` 再依 route 將封包交給正確的 transport driver。
+
+對 BMC 而言，I2C/I3C、eSPI、PCIe、LTPI、GPIO 等介面在功能目標上都屬於平台管理通道；差異不在「能不能管理」，而在電源域、頻寬、拓樸、延遲、標準化程度與是否依賴 Host 端參與。
+
+| 差異面 | 對通路選擇的影響 |
+| :--- | :--- |
+| 電源域 | 決定 Host 未開機或部分電源 rail 關閉時，該通路是否仍可使用。 |
+| 頻寬 | 決定是否適合傳大量資料，例如 firmware update、log dump 或 attestation payload。 |
+| 拓樸 | 決定是點對點、匯流排、多裝置共用，或跨 SCM/HPM 板間傳輸。 |
+| 延遲 | 影響是否適合即時控制、事件通知或大量輪詢。 |
+| 標準化程度 | 影響 Host driver、OpenBMC daemon、跨平台移植與維護成本。 |
+| Host 依賴性 | 決定是否需要 Host CPU、PCH、PCIe fabric、Host OS 或特定 driver 參與。 |
+
+同一個裝置也可能在不同時間點走不同通路。例如 NVMe 裝置在 Host 未開機時可能只能透過 I2C/SMBus sideband 讀取基本狀態；PCIe link 起來後，可改走 MCTP over PCIe VDM 或 MMBI 做更高頻寬的管理；若 PCIe link 異常，BMC 又可能退回 sideband 或 GPIO 做 reset / recovery。
+
+**判斷原則**：User-space 關心的是管理物件與協定語意；實體通路由 platform configuration、`mctpd` route、kernel driver 與硬體狀態共同決定。
+
 ### 3.5 DC-SCM 與 PCIe 拓樸設計
 
 AST2700 在 DC-SCM 架構中管理 SSD 或其他 PCIe 裝置時，常見拓樸如下。
@@ -434,6 +502,65 @@ AST2700 在 DC-SCM 架構中管理 SSD 或其他 PCIe 裝置時，常見拓樸�
 * **管理路徑**：AST2700 RC → SCM 板內 PCIe 走線 → 本機 SSD。
 * **優點**：PCIe 訊號不離開 SCM，不影響 DC-SCI 腳位定義；適合 BMC 日誌、備份與本地高速儲存。
 * **限制**：該 SSD 屬於 BMC 本機資源，Host 預設不可直接存取。
+
+#### 場景二補充：BMC 作為 PCIe Root Complex 的應用場景
+
+BMC 作為 PCIe RC 時，角色會從「被 Host 枚舉的 Endpoint」變成「主動枚舉下游裝置的 Root Complex」。這種設計通常用在 SCM 板內或 BMC 專用的本地資源，不建議未經規劃就跨 DC-SCI 拉到 HPM 上。
+
+| 應用場景 | 適合原因 |
+| :--- | :--- |
+| BMC 本地 NVMe SSD | 儲存 event log、crash dump、trace、firmware image、BMC backup image 或大量診斷資料。 |
+| SCM 板上 PCIe switch / endpoint | 讓 BMC 管理 SCM 本地擴充裝置，例如安全模組、資料收集裝置或客製管理 ASIC。 |
+| 韌體更新暫存區 | 大型 firmware package 可先放在 BMC local SSD，再由 BMC 分批更新其他元件。 |
+| 故障診斷與資料保留 | Host 當機或斷電時，BMC 仍可在自身電源域內保存 debug 資料。 |
+| BMC 專用高速儲存 | 相較 eMMC、SPI flash 或 USB storage，PCIe NVMe 可提供更高容量與吞吐量。 |
+
+BMC 作為 RC 的主要價值是 **不依賴 Host OS**。只要 AST2700、本地 PCIe link 與下游裝置位於 BMC 可控制的電源域，BMC Linux 就能像一般 Linux 主機一樣枚舉裝置、載入 driver，並將資源掛載到自己的檔案系統。
+
+典型流程如下：
+
+```text
+AST2700 PCIe controller 設為 RC
+  ↓
+Link training with local endpoint / NVMe
+  ↓
+BMC Linux PCI core enumeration
+  ↓
+載入標準 driver，例如 nvme
+  ↓
+產生 /dev/nvme0n1
+  ↓
+OpenBMC 服務使用本地儲存
+```
+
+**BMC RC 與 BMC EP 的差異**
+
+| 項目 | BMC 作為 PCIe EP | BMC 作為 PCIe RC |
+| :--- | :--- | :--- |
+| 枚舉方向 | Host 枚舉 BMC | BMC 枚舉下游裝置 |
+| 典型用途 | xHCI emulation、MMBI、MCTP over PCIe、Host/BMC 管理通道 | BMC 本地 NVMe、SCM 本地 PCIe endpoint、BMC 專用高速資源 |
+| Host 可見性 | Host 可看到 BMC 這個 PCIe device/function | Host 預設看不到 BMC RC 下游裝置 |
+| 資料路徑 | Host ↔ BMC EP | BMC ↔ 本地 PCIe device |
+| 對 DC-SCI 影響 | 標準 SCM 通常以 BMC EP 連 HPM | 若只在 SCM 板內，不影響 DC-SCI；若跨板拉到 HPM，需客製化設計 |
+| 電源依賴 | 通常依賴 Host PCIe fabric 上電與 link training | 依賴 BMC 與本地下游裝置電源域 |
+
+**設計注意事項**
+
+1. **電源域要一致**
+
+   BMC RC 連接的本地 SSD 或 endpoint，需確認是否由 BMC standby / SCM power domain 供電。若下游裝置跟著 Host power rail 關閉，BMC 即使是 RC 也無法全時使用。
+
+2. **不要混淆 Host 資料面與 BMC 管理面**
+
+   BMC local NVMe 屬於 BMC 自己的 storage，不是 Host OS 的資料碟。若 Host 也需要存取，必須額外設計共享、轉送或匯出機制，不能假設 Host 可直接枚舉到。
+
+3. **跨板 RC 設計會影響互通性**
+
+   若將 AST2700 RC 腳位拉到 DC-SCI，再去接 HPM 上的 PCIe endpoint，通常會破壞標準 DC-SCM 插槽互通假設。這類設計只適合 HPM/SCM 成套控制的客製平台。
+
+4. **Linux driver model 會不同**
+
+   BMC 作為 EP 時重點在 EPC/EPF、BAR、MSI/MSI-X、Host 驅動互動；BMC 作為 RC 時，BMC Linux 會走一般 PCI host bridge、PCI core enumeration、下游裝置 driver 載入流程。
 
 #### 場景三：客製化跨板 PCIe RC 設計
 
