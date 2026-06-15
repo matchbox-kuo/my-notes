@@ -1,6 +1,6 @@
-# AST2700 PCIe 韌體開發與 OpenBMC 實務手冊
+# AST2700 DC-SCM 平台管理架構與 OpenBMC 實務
 
-本文件整理 OpenBMC、PCIe Endpoint、DC-SCM、Caliptra、LTPI、MCTP/PLDM，以及 AST2700 韌體開發常見設計情境。內容聚焦於架構理解、開發職責與實務判斷。
+本文件以 AST2700 與 DC-SCM 平台管理架構為主軸，整理 OpenBMC、PCIe RC/EP、Caliptra、LTPI、MCTP/PLDM 與 GPIO 控制等常見設計情境。內容聚焦於架構理解、元件角色、管理路徑與實務判斷。
 
 ---
 
@@ -74,15 +74,15 @@ xHCI 是 USB 3.x Host Controller 的標準介面，並可向下相容 USB 2.0/1.
 
 #### 2.1.4 BMC 本機 USB 與 NVMe 儲存
 
-若 SCM 板上預留 BMC 專用 USB 埠或 M.2 插槽，該裝置可只供 BMC 使用，不暴露給 Host。
+若 SCM 板上的 USB 埠或 PCIe M.2 插槽直接連接 AST2700，且未與 Host 共用控制器、PCIe switch 或其他資料路徑，該裝置可作為 BMC 專用儲存，不會被 Host 枚舉。
 
 1. **BMC 使用實體 USB 裝置**
 
-   AST2700 以 USB Host 身分管理本機 USB 埠。BMC Linux 載入 `xhci-hcd` 或對應 USB Host 驅動，完成裝置枚舉後將隨身碟掛載為 `/dev/sdX`。此路徑不經過對外 PCIe 連接器，Host 不會感知該 USB 裝置。
+   USB 埠直接連接 AST2700 的 USB Host controller 時，由 BMC Linux 載入對應的 USB Host 與 Mass Storage 驅動。枚舉完成後，隨身碟通常會出現為 `/dev/sdX` 區塊裝置；建立掛載點並掛載其中的檔案系統後，OpenBMC 服務才能存取其內容。由於此 USB 資料路徑只存在於 SCM 板內，Host 不會看到該裝置。
 
 2. **BMC 使用本機 NVMe SSD**
 
-   若 SCM 板上 M.2 插槽供 BMC 專用，AST2700 對應 PCIe 控制器需設定為 RC（Root Complex）。Link Training 成功後，BMC Linux 載入 NVMe 驅動並產生 `/dev/nvme0n1` 等節點，供日誌、備份映像或本機資料儲存使用。
+   若 PCIe M.2 插槽直接連接 AST2700 的 Root Port，BMC Linux 會管理該 Root Port 下的獨立 PCIe hierarchy。完成 SSD 上電、解除 reset、PCIe Link Training 與裝置枚舉後，標準 NVMe 驅動會綁定 SSD，並建立 `/dev/nvme0n1` 等區塊裝置節點。此 SSD 可供 BMC 儲存日誌、備份映像或本機資料；Host 若沒有連到這段 PCIe hierarchy，就無法直接枚舉或存取它。
 
 #### 2.1.5 Linux 在 PCIe Endpoint 架構中的角色
 
@@ -496,41 +496,41 @@ AST2700 在 DC-SCM 架構中管理 SSD 或其他 PCIe 裝置時，常見拓樸�
 * **優點**：符合 DC-SCM 標準互通性，不額外占用連接器腳位。
 * **要求**：韌體需完整支援 MCTP、PLDM 或 NVMe-MI 等管理協定。
 
-#### 場景二：SCM 本地 PCIe RC 擴充
+#### 場景二：SCM 本地 PCIe hierarchy
 
-* **架構**：AST2700 將本機 PCIe 控制器設定為 RC，連接 SCM 板上的 M.2 SSD。
-* **管理路徑**：AST2700 RC → SCM 板內 PCIe 走線 → 本機 SSD。
-* **優點**：PCIe 訊號不離開 SCM，不影響 DC-SCI 腳位定義；適合 BMC 日誌、備份與本地高速儲存。
-* **限制**：該 SSD 屬於 BMC 本機資源，Host 預設不可直接存取。
+* **架構**：AST2700 以 Root Complex 角色建立獨立的 PCIe hierarchy，並透過本機 Root Port 連接 SCM 板上的 PCIe Endpoint；下游裝置可為 PCIe switch、管理 ASIC、安全模組或 M.2 NVMe SSD。
+* **管理路徑**：AST2700 Root Port → SCM 板內 PCIe 走線 → 本機 PCIe Endpoint。
+* **優點**：BMC Linux 可直接枚舉與管理 SCM 本地 PCIe 裝置；若訊號不離開 SCM，也不影響 DC-SCI 腳位定義。
+* **限制**：這段 hierarchy 屬於 BMC 管理的本機資源，Host 預設無法直接枚舉其下游裝置。若連接 NVMe SSD，才會進一步形成 BMC 本機儲存用途。
 
-#### 場景二補充：BMC 作為 PCIe Root Complex 的應用場景
+#### 場景二補充：BMC 作為 PCIe Root Complex 的角色
 
-BMC 作為 PCIe RC 時，角色會從「被 Host 枚舉的 Endpoint」變成「主動枚舉下游裝置的 Root Complex」。這種設計通常用在 SCM 板內或 BMC 專用的本地資源，不建議未經規劃就跨 DC-SCI 拉到 HPM 上。
+BMC 作為 PCIe RC 時，AST2700 不再是被 Host 枚舉的 Endpoint，而是由 BMC Linux 建立並管理 Root Port 下的獨立 PCIe hierarchy。RC 本身不限定下游裝置的用途；實際功能取決於所連接的 PCIe Endpoint 及其 driver。
 
-| 應用場景 | 適合原因 |
+| 下游裝置 | BMC 可使用的功能 |
 | :--- | :--- |
-| BMC 本地 NVMe SSD | 儲存 event log、crash dump、trace、firmware image、BMC backup image 或大量診斷資料。 |
-| SCM 板上 PCIe switch / endpoint | 讓 BMC 管理 SCM 本地擴充裝置，例如安全模組、資料收集裝置或客製管理 ASIC。 |
-| 韌體更新暫存區 | 大型 firmware package 可先放在 BMC local SSD，再由 BMC 分批更新其他元件。 |
-| 故障診斷與資料保留 | Host 當機或斷電時，BMC 仍可在自身電源域內保存 debug 資料。 |
-| BMC 專用高速儲存 | 相較 eMMC、SPI flash 或 USB storage，PCIe NVMe 可提供更高容量與吞吐量。 |
+| PCIe switch | 在同一個 BMC PCIe hierarchy 下擴充多個 Endpoint。 |
+| 管理 ASIC 或資料收集裝置 | 提供平台控制、遙測、除錯或客製資料處理功能。 |
+| 安全模組 | 提供由 BMC 管理的安全、驗證或信任服務。 |
+| NVMe SSD | 作為其中一種 PCIe Endpoint，提供 BMC 本機高速儲存。 |
 
-BMC 作為 RC 的主要價值是 **不依賴 Host OS**。只要 AST2700、本地 PCIe link 與下游裝置位於 BMC 可控制的電源域，BMC Linux 就能像一般 Linux 主機一樣枚舉裝置、載入 driver，並將資源掛載到自己的檔案系統。
+BMC 作為 RC 的主要價值是可在不依賴 Host OS 的情況下，直接控制 SCM 本地 PCIe 裝置。只要 AST2700、PCIe link 與下游裝置位於 BMC 可控制的電源域，BMC Linux 便能完成枚舉、資源配置及 driver 綁定。只有當 Endpoint 是 NVMe SSD 等儲存裝置時，才會建立區塊裝置並掛載檔案系統。
 
 典型流程如下：
 
 ```text
 AST2700 PCIe controller 設為 RC
   ↓
-Link training with local endpoint / NVMe
+Root Port 與本機 Endpoint 完成 link training
   ↓
 BMC Linux PCI core enumeration
   ↓
-載入標準 driver，例如 nvme
+依 Endpoint 類型載入對應 driver
   ↓
-產生 /dev/nvme0n1
-  ↓
-OpenBMC 服務使用本地儲存
+OpenBMC 服務使用該 PCIe 裝置提供的功能
+
+例如 Endpoint 為 NVMe SSD：
+NVMe driver 綁定 → 產生 /dev/nvme0n1 → 掛載檔案系統
 ```
 
 **BMC RC 與 BMC EP 的差異**
@@ -538,7 +538,7 @@ OpenBMC 服務使用本地儲存
 | 項目 | BMC 作為 PCIe EP | BMC 作為 PCIe RC |
 | :--- | :--- | :--- |
 | 枚舉方向 | Host 枚舉 BMC | BMC 枚舉下游裝置 |
-| 典型用途 | xHCI emulation、MMBI、MCTP over PCIe、Host/BMC 管理通道 | BMC 本地 NVMe、SCM 本地 PCIe endpoint、BMC 專用高速資源 |
+| 典型用途 | xHCI emulation、MMBI、MCTP over PCIe、Host/BMC 管理通道 | SCM 本地 PCIe endpoint、PCIe switch 或 BMC 專用資源；NVMe SSD 為其中一例 |
 | Host 可見性 | Host 可看到 BMC 這個 PCIe device/function | Host 預設看不到 BMC RC 下游裝置 |
 | 資料路徑 | Host ↔ BMC EP | BMC ↔ 本地 PCIe device |
 | 對 DC-SCI 影響 | 標準 SCM 通常以 BMC EP 連 HPM | 若只在 SCM 板內，不影響 DC-SCI；若跨板拉到 HPM，需客製化設計 |
