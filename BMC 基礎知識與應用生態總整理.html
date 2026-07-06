@@ -130,6 +130,12 @@
       background: rgba(16, 27, 39, 0.72);
       backdrop-filter: blur(14px);
       box-shadow: var(--shadow);
+      transition: transform 160ms ease, border-color 160ms ease;
+    }
+
+    .stat:hover {
+      transform: translateY(-3px);
+      border-color: rgba(56, 199, 232, 0.55);
     }
 
     .stat strong {
@@ -267,6 +273,13 @@
       color: var(--cyan);
     }
 
+    .nav a.active {
+      background: rgba(68, 215, 255, 0.14);
+      color: var(--cyan);
+      font-weight: 700;
+      box-shadow: inset 3px 0 0 var(--cyan);
+    }
+
     .layout.nav-collapsed .nav-title,
     .layout.nav-collapsed .nav-links {
       opacity: 0;
@@ -293,6 +306,8 @@
 
     section {
       --section-accent: var(--cyan);
+      position: relative;
+      scroll-margin-top: 20px;
       padding: clamp(22px, 3vw, 34px);
       border: 1px solid var(--line);
       border-radius: var(--radius);
@@ -300,6 +315,17 @@
         linear-gradient(90deg, color-mix(in srgb, var(--section-accent) 12%, transparent), transparent 34%),
         linear-gradient(180deg, rgba(16, 27, 39, 0.92), rgba(9, 17, 27, 0.92));
       box-shadow: var(--shadow);
+    }
+
+    section::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      border-radius: var(--radius) var(--radius) 0 0;
+      background: linear-gradient(90deg, var(--section-accent), transparent 68%);
     }
 
     section[data-accent="cyan"] { --section-accent: var(--cyan); }
@@ -313,15 +339,74 @@
     section[data-accent="lime"] { --section-accent: var(--lime); }
 
     .section-head {
+      position: relative;
       display: grid;
-      gap: 8px;
-      margin-bottom: 22px;
+      gap: 12px;
+      margin-bottom: 26px;
+      padding-bottom: 18px;
+      padding-right: 72px;
+      border-bottom: 1px solid color-mix(in srgb, var(--section-accent) 30%, var(--line));
+    }
+
+    .section-icon {
+      position: absolute;
+      top: 2px;
+      right: 4px;
+      width: 56px;
+      height: 56px;
+      display: grid;
+      place-items: center;
+      border: 1px solid color-mix(in srgb, var(--section-accent) 40%, var(--line));
+      border-radius: 14px;
+      background: color-mix(in srgb, var(--section-accent) 12%, transparent);
+      color: var(--section-accent);
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+    }
+
+    .section-icon svg {
+      width: 30px;
+      height: 30px;
+      display: block;
+    }
+
+    @media (max-width: 640px) {
+      .section-head {
+        padding-right: 60px;
+      }
+
+      .section-icon {
+        width: 46px;
+        height: 46px;
+      }
+
+      .section-icon svg {
+        width: 24px;
+        height: 24px;
+      }
     }
 
     .section-index {
+      justify-self: start;
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 5px 13px;
+      border: 1px solid color-mix(in srgb, var(--section-accent) 42%, var(--line));
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--section-accent) 14%, transparent);
       color: var(--section-accent);
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 800;
+      letter-spacing: 1.6px;
+    }
+
+    .section-index::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--section-accent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--section-accent) 22%, transparent);
     }
 
     h2 {
@@ -332,10 +417,23 @@
     }
 
     h3 {
-      margin: 28px 0 14px;
+      position: relative;
+      margin: 32px 0 14px;
+      padding-left: 14px;
       color: #ffffff;
       font-size: 21px;
       letter-spacing: 0;
+    }
+
+    h3::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 5px;
+      bottom: 5px;
+      width: 4px;
+      border-radius: 2px;
+      background: linear-gradient(180deg, var(--section-accent), transparent);
     }
 
     p {
@@ -344,11 +442,15 @@
     }
 
     .callout {
+      position: relative;
       margin: 18px 0 24px;
-      padding: 18px 20px;
+      padding: 18px 20px 18px 22px;
+      border: 1px solid color-mix(in srgb, var(--section-accent) 34%, transparent);
       border-left: 4px solid var(--section-accent);
       border-radius: var(--radius);
       background: color-mix(in srgb, var(--section-accent) 14%, transparent);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--section-accent) 10%, transparent),
+        0 12px 30px rgba(0, 0, 0, 0.22);
       color: #ecfbff;
       font-weight: 700;
     }
@@ -378,6 +480,13 @@
       background:
         linear-gradient(180deg, color-mix(in srgb, var(--tile-accent) 8%, transparent), transparent 62%),
         linear-gradient(180deg, rgba(19, 34, 51, 0.95), rgba(13, 24, 37, 0.95));
+      transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .tile:hover {
+      transform: translateY(-3px);
+      border-color: color-mix(in srgb, var(--tile-accent) 62%, var(--line));
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
     }
 
     .tile h4 {
@@ -445,6 +554,14 @@
 
     tr:last-child td {
       border-bottom: 0;
+    }
+
+    tbody tr {
+      transition: background 140ms ease;
+    }
+
+    tbody tr:hover td {
+      background: color-mix(in srgb, var(--section-accent) 9%, transparent);
     }
 
     .pill {
@@ -529,37 +646,6 @@
       font-weight: 800;
     }
 
-    .rack-diagram {
-      display: grid;
-      grid-template-columns: minmax(170px, 0.9fr) minmax(260px, 1.4fr) minmax(170px, 0.9fr);
-      gap: 16px;
-      align-items: center;
-      margin: 18px 0;
-    }
-
-    .rack-column,
-    .rack-center {
-      display: grid;
-      gap: 12px;
-    }
-
-    .rack-center {
-      padding: 18px;
-      border: 1px solid rgba(84, 227, 154, 0.34);
-      border-radius: var(--radius);
-      background: rgba(84, 227, 154, 0.08);
-    }
-
-    .label-box {
-      padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: rgba(19, 34, 51, 0.86);
-      text-align: center;
-      color: #eef7ff;
-      font-weight: 800;
-    }
-
     ul {
       margin: 10px 0 0;
       padding-left: 20px;
@@ -627,8 +713,7 @@
       .hero-stats,
       .grid.cols-5,
       .grid.cols-3,
-      .grid.cols-2,
-      .rack-diagram {
+      .grid.cols-2 {
         grid-template-columns: 1fr;
       }
     }
@@ -698,6 +783,16 @@
           <div class="section-head">
             <span class="section-index">SECTION 0</span>
             <h2>伺服器種類</h2>
+            <span class="section-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="6" rx="1.5"></rect>
+                <rect x="3" y="14" width="18" height="6" rx="1.5"></rect>
+                <line x1="6.5" y1="7" x2="6.6" y2="7"></line>
+                <line x1="6.5" y1="17" x2="6.6" y2="17"></line>
+                <line x1="10" y1="7" x2="17" y2="7"></line>
+                <line x1="10" y1="17" x2="17" y2="17"></line>
+              </svg>
+            </span>
           </div>
           <p>BMC 的功能深度通常取決於伺服器等級、應用場景與硬體複雜度。因此，理解伺服器分類有助於判斷 BMC 的管理需求。</p>
 
@@ -808,6 +903,16 @@
           <div class="section-head">
             <span class="section-index">SECTION 1</span>
             <h2>AI Rack 與高階 GPU 平台名詞</h2>
+            <span class="section-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="5" y="3" width="14" height="16" rx="1.5"></rect>
+                <line x1="8" y1="6.5" x2="16" y2="6.5"></line>
+                <line x1="8" y1="10" x2="16" y2="10"></line>
+                <line x1="8" y1="13.5" x2="13" y2="13.5"></line>
+                <line x1="7" y1="21" x2="7" y2="19"></line>
+                <line x1="17" y1="21" x2="17" y2="19"></line>
+              </svg>
+            </span>
           </div>
           <p>AI Rack 是針對 AI training / inference 設計的 <strong>整櫃級系統架構</strong>，不是單一零件，也不是單純一台伺服器。隨著功耗、散熱與高速互連規模提高，BMC 或 rack manager 需要管理 GPU tray、switch、retimer、CXL device、液冷系統等元件。</p>
 
@@ -841,24 +946,72 @@
           </div>
 
           <h3>AI Rack 的概念架構</h3>
-          <div class="rack-diagram">
-            <div class="rack-column">
-              <div class="label-box">Compute Node</div>
-              <div class="label-box">Network Switch<br>Ethernet / InfiniBand</div>
-              <div class="label-box">Power Shelf</div>
-            </div>
-            <div class="rack-center">
-              <div class="label-box">AI Rack</div>
-              <div class="label-box">GPU Tray</div>
-              <div class="label-box">GPU / Accelerator</div>
-              <div class="label-box">NVLink / PCIe Switch</div>
-              <div class="label-box">PCIe / CXL Retimer</div>
-            </div>
-            <div class="rack-column">
-              <div class="label-box">CDU / Liquid Cooling</div>
-              <div class="label-box">Cold Plate</div>
-              <div class="label-box">Rack Manager / BMC</div>
-            </div>
+          <div class="svg-diagram" aria-label="AI Rack 機櫃示意圖：機櫃內堆疊 compute node、GPU tray、switch、retimer、power shelf，右側為 Rack Manager/BMC 與液冷迴路">
+            <svg viewBox="0 0 920 440" role="img" aria-labelledby="ai-rack-title">
+              <title id="ai-rack-title">AI Rack 機櫃內部堆疊與 Rack Manager / BMC、液冷迴路的關係</title>
+              <defs>
+                <marker id="arrow-rack" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(224, 237, 249, 0.9)"></path>
+                </marker>
+              </defs>
+
+              <!-- 機櫃外框 -->
+              <rect x="48" y="26" width="300" height="384" rx="10" fill="rgba(56, 199, 232, 0.05)" stroke="rgba(56, 199, 232, 0.5)" stroke-width="1.8"></rect>
+              <text class="diagram-title" x="198" y="52">AI RACK</text>
+
+              <!-- U 位堆疊 -->
+              <rect x="66" y="72" width="264" height="44" rx="5" fill="rgba(56, 199, 232, 0.12)" stroke="rgba(56, 199, 232, 0.75)" stroke-width="1.4"></rect>
+              <text class="diagram-sub" x="198" y="99">Compute Node</text>
+
+              <rect x="66" y="124" width="264" height="44" rx="5" fill="rgba(240, 141, 69, 0.16)" stroke="rgba(240, 141, 69, 0.85)" stroke-width="1.4"></rect>
+              <text class="diagram-sub" x="198" y="151">GPU Tray</text>
+
+              <rect x="66" y="176" width="264" height="44" rx="5" fill="rgba(240, 141, 69, 0.16)" stroke="rgba(240, 141, 69, 0.85)" stroke-width="1.4"></rect>
+              <text class="diagram-sub" x="198" y="203">GPU Tray</text>
+
+              <rect x="66" y="228" width="264" height="44" rx="5" fill="rgba(157, 140, 242, 0.14)" stroke="rgba(157, 140, 242, 0.8)" stroke-width="1.4"></rect>
+              <text class="diagram-sub" x="198" y="255">NVLink / PCIe Switch</text>
+
+              <rect x="66" y="280" width="264" height="44" rx="5" fill="rgba(157, 140, 242, 0.14)" stroke="rgba(157, 140, 242, 0.8)" stroke-width="1.4"></rect>
+              <text class="diagram-sub" x="198" y="307">PCIe / CXL Retimer</text>
+
+              <rect x="66" y="332" width="264" height="44" rx="5" fill="rgba(243, 185, 79, 0.16)" stroke="rgba(243, 185, 79, 0.82)" stroke-width="1.4"></rect>
+              <text class="diagram-sub" x="198" y="359">Power Shelf</text>
+
+              <!-- 機櫃腳 -->
+              <line x1="92" y1="410" x2="92" y2="422" class="diagram-line"></line>
+              <line x1="304" y1="410" x2="304" y2="422" class="diagram-line"></line>
+
+              <!-- 右側：管理與液冷 -->
+              <rect x="636" y="60" width="236" height="74" rx="7" fill="rgba(56, 199, 232, 0.12)" stroke="rgba(56, 199, 232, 0.88)" stroke-width="1.8"></rect>
+              <text class="diagram-title" x="754" y="92">Rack Manager / BMC</text>
+              <text class="diagram-sub" x="754" y="115">整櫃管理 / 監控 / 保護</text>
+
+              <rect x="636" y="176" width="236" height="56" rx="7" fill="rgba(45, 191, 173, 0.13)" stroke="rgba(45, 191, 173, 0.75)" stroke-width="1.5"></rect>
+              <text class="diagram-sub" x="754" y="209">CDU（冷卻液分配）</text>
+
+              <rect x="636" y="250" width="236" height="56" rx="7" fill="rgba(45, 191, 173, 0.13)" stroke="rgba(45, 191, 173, 0.75)" stroke-width="1.5"></rect>
+              <text class="diagram-sub" x="754" y="283">Cold Plate 導熱</text>
+
+              <rect x="636" y="324" width="236" height="56" rx="7" fill="rgba(45, 191, 173, 0.13)" stroke="rgba(45, 191, 173, 0.75)" stroke-width="1.5"></rect>
+              <text class="diagram-sub" x="754" y="357">Pump / Valve / Leak sensor</text>
+
+              <!-- 管理連線 -->
+              <text class="diagram-sub" x="492" y="86">OOB 管理 / 遙測</text>
+              <path class="diagram-line" marker-end="url(#arrow-rack)" d="M 348 104 C 470 104, 520 100, 632 98"></path>
+
+              <!-- 液冷連線 -->
+              <text class="diagram-sub" x="492" y="262">液冷循環</text>
+              <path class="diagram-line" marker-end="url(#arrow-rack)" d="M 348 200 C 470 278, 540 278, 632 278"></path>
+
+              <!-- BMC 監控液冷 -->
+              <path class="diagram-line" stroke-dasharray="5 5" marker-end="url(#arrow-rack)" d="M 754 134 L 754 174"></path>
+
+              <!-- 液冷內部迴圈 -->
+              <path class="diagram-line" marker-end="url(#arrow-rack)" d="M 660 232 L 660 248"></path>
+              <path class="diagram-line" marker-end="url(#arrow-rack)" d="M 660 306 L 660 322"></path>
+              <path class="diagram-line" marker-end="url(#arrow-rack)" d="M 872 350 C 902 350, 902 208, 874 204"></path>
+            </svg>
           </div>
 
           <h3>Switch 的種類</h3>
@@ -895,6 +1048,20 @@
           <div class="section-head">
             <span class="section-index">SECTION 2</span>
             <h2>BMC 是什麼</h2>
+            <span class="section-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="6.5" y="6.5" width="11" height="11" rx="1.5"></rect>
+                <rect x="9.5" y="9.5" width="5" height="5" rx="0.8"></rect>
+                <line x1="9.5" y1="3.5" x2="9.5" y2="6.5"></line>
+                <line x1="14.5" y1="3.5" x2="14.5" y2="6.5"></line>
+                <line x1="9.5" y1="17.5" x2="9.5" y2="20.5"></line>
+                <line x1="14.5" y1="17.5" x2="14.5" y2="20.5"></line>
+                <line x1="3.5" y1="9.5" x2="6.5" y2="9.5"></line>
+                <line x1="3.5" y1="14.5" x2="6.5" y2="14.5"></line>
+                <line x1="17.5" y1="9.5" x2="20.5" y2="9.5"></line>
+                <line x1="17.5" y1="14.5" x2="20.5" y2="14.5"></line>
+              </svg>
+            </span>
           </div>
           <p><strong>BMC</strong> 是 <strong>Baseboard Management Controller</strong>，中文常譯為 <strong>基板管理控制器</strong>。它是獨立於主機 CPU 的管理晶片，常見於 server、storage、network appliance、AI server、telecom equipment 等需要遠端維運的設備。</p>
           <div class="grid cols-2">
@@ -912,6 +1079,71 @@
             <div class="tile tone-cyan"><h4>Glue Logic 與訊號整合</h4><p>整合 GPIO、presence、fault、interrupt、strap、mux 與 LED 等離散訊號，補足不同晶片介面之間的 Board-Level 邏輯。</p></div>
             <div class="tile tone-violet"><h4>Board-Level 狀態與保護</h4><p>即時偵測異常條件、鎖存 fault、保存簡單狀態，並在必要時直接觸發 reset、power off 或告警。</p></div>
           </div>
+
+          <div class="svg-diagram" aria-label="CPLD 架構示意圖：頂部為 standby power 到 U-Boot 的上電順序，下方為 CPLD 居中連接電源、CPU/PCH、卡槽與 BMC 的 glue logic">
+            <svg viewBox="0 0 920 430" role="img" aria-labelledby="cpld-title">
+              <title id="cpld-title">CPLD 的上電順序與 Board-Level glue logic 架構</title>
+              <defs>
+                <marker id="arrow-cpld" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(224, 237, 249, 0.9)"></path>
+                </marker>
+              </defs>
+
+              <!-- 上電順序 -->
+              <text class="diagram-sub" x="460" y="18" style="font-size:13px">典型上電 / 重置順序（實際依平台）</text>
+              <rect class="diagram-card" x="70" y="30" width="150" height="34"></rect>
+              <text class="diagram-sub" x="145" y="52" style="font-size:13px">Standby Power</text>
+              <rect class="diagram-card" x="290" y="30" width="110" height="34" style="fill:rgba(243,185,79,0.16);stroke:rgba(243,185,79,0.85)"></rect>
+              <text class="diagram-sub" x="345" y="52" style="font-size:13px">CPLD</text>
+              <rect class="diagram-card" x="470" y="30" width="160" height="34"></rect>
+              <text class="diagram-sub" x="550" y="52" style="font-size:13px">BMC BootROM</text>
+              <rect class="diagram-card" x="690" y="30" width="130" height="34"></rect>
+              <text class="diagram-sub" x="755" y="52" style="font-size:13px">U-Boot</text>
+              <path class="diagram-line" marker-end="url(#arrow-cpld)" d="M 220 47 L 288 47"></path>
+              <path class="diagram-line" marker-end="url(#arrow-cpld)" d="M 400 47 L 468 47"></path>
+              <path class="diagram-line" marker-end="url(#arrow-cpld)" d="M 630 47 L 688 47"></path>
+
+              <line x1="40" y1="80" x2="880" y2="80" class="diagram-line" opacity="0.35"></line>
+
+              <!-- 左側：CPLD 連接的硬體 -->
+              <rect class="diagram-card" x="64" y="128" width="196" height="60"></rect>
+              <text class="diagram-sub" x="162" y="163">電源控制 / Rails</text>
+              <rect class="diagram-card" x="64" y="230" width="196" height="60"></rect>
+              <text class="diagram-sub" x="162" y="265">Host CPU / PCH</text>
+              <rect class="diagram-card" x="64" y="332" width="196" height="60"></rect>
+              <text class="diagram-sub" x="162" y="367">FPGA / 卡槽</text>
+
+              <!-- 中央：CPLD -->
+              <rect class="diagram-card" x="378" y="212" width="164" height="96" style="fill:rgba(243,185,79,0.14);stroke:rgba(243,185,79,0.9);stroke-width:1.8"></rect>
+              <text class="diagram-title" x="460" y="250">CPLD</text>
+              <text class="diagram-sub" x="460" y="276" style="font-size:13px">Board-Level 邏輯 / 保護</text>
+
+              <!-- 右側：BMC -->
+              <rect class="diagram-card main" x="660" y="230" width="196" height="60"></rect>
+              <text class="diagram-title" x="758" y="266">BMC</text>
+
+              <!-- 下方輸出 -->
+              <rect class="diagram-card" x="390" y="344" width="140" height="48" style="fill:rgba(84,209,139,0.13);stroke:rgba(84,209,139,0.75)"></rect>
+              <text class="diagram-sub" x="460" y="373" style="font-size:13px">LED / POST / Alert</text>
+
+              <!-- 左側連線（控制 + 感測，雙向） -->
+              <path class="diagram-line" marker-start="url(#arrow-cpld)" marker-end="url(#arrow-cpld)" d="M 260 158 C 316 158, 328 216, 376 236"></path>
+              <text class="diagram-sub" x="318" y="150" style="font-size:12px">power-good</text>
+              <path class="diagram-line" marker-start="url(#arrow-cpld)" marker-end="url(#arrow-cpld)" d="M 260 260 L 376 260"></path>
+              <text class="diagram-sub" x="318" y="250" style="font-size:12px">reset / strap</text>
+              <path class="diagram-line" marker-start="url(#arrow-cpld)" marker-end="url(#arrow-cpld)" d="M 260 362 C 316 362, 328 304, 376 284"></path>
+              <text class="diagram-sub" x="318" y="374" style="font-size:12px">presence / fault</text>
+
+              <!-- CPLD ↔ BMC -->
+              <path class="diagram-line" marker-start="url(#arrow-cpld)" marker-end="url(#arrow-cpld)" d="M 542 260 L 658 260"></path>
+              <text class="diagram-sub" x="600" y="244" style="font-size:12px">I2C · GPIO/IRQ</text>
+              <text class="diagram-sub" x="600" y="284" style="font-size:12px">JTAG/SPI 更新 image</text>
+
+              <!-- CPLD → 輸出 -->
+              <path class="diagram-line" marker-end="url(#arrow-cpld)" d="M 460 308 L 460 342"></path>
+            </svg>
+          </div>
+
           <div class="table-wrap">
             <table>
               <thead><tr><th>項目</th><th>BMC</th><th>CPLD</th></tr></thead>
@@ -922,7 +1154,7 @@
               </tbody>
             </table>
           </div>
-          <div class="callout">分工心智模型：CPLD 像 Board-Level 即時邏輯管家，負責 power、reset 與離散訊號的確定性控制；BMC 像管理中樞，負責策略、紀錄、對外管理與韌體更新。CPLD 不取代 BMC，兩者通常互相配合。</div>
+          <div class="callout">重點整理：CPLD 像 Board-Level 即時邏輯管家，負責 power、reset 與離散訊號的確定性控制；BMC 像管理中樞，負責策略、紀錄、對外管理與韌體更新。CPLD 不取代 BMC，兩者通常互相配合。</div>
 
           <h3>SMC 是什麼</h3>
           <p>這裡的 <strong>SMC</strong> 指 ASPEED <strong>Satellite Management Controller</strong>，屬於 server management 用的 <strong>Bridge IC</strong>。以 <strong>AST1040 SMC</strong> 為例，它是第二代 Satellite Management Controller，用於可擴充的 multi-node server management、OCP Streaming Boot 架構，以及透過 USB 進行 OBMF-ICP 管理連線。</p>
@@ -971,7 +1203,7 @@
               </tbody>
             </table>
           </div>
-          <div class="callout">實務心智模型：BMC 負責對外管理與決策；SMC 靠近被管理的節點或模組，負責橋接與現場訊號收斂。兩者之間通常以 USB/LTPI 承載主要管理連線，再搭配 I2C/SMBus、GPIO、interrupt 等 sideband 訊號完成硬體控制。</div>
+          <div class="callout">重點整理：BMC 負責對外管理與決策；SMC 靠近被管理的節點或模組，負責橋接與現場訊號收斂。兩者之間通常以 USB/LTPI 承載主要管理連線，再搭配 I2C/SMBus、GPIO、interrupt 等 sideband 訊號完成硬體控制。</div>
 
           <h3>對應新世代 AI 晶片與 Rack-scale 平台</h3>
           <p>在 NVIDIA Grace Blackwell、GB200/GB300 NVL72、AI rack、DPU / SuperNIC 等新世代平台中，管理架構逐漸從「一顆 BMC 管整台 server」演進成 <strong>多控制器分層管理</strong>。BMC 仍是對外的主要 out-of-band 管理入口，但 tray、switch、power shelf、DPU、液冷模組等子系統常會有自己的管理控制器。</p>
@@ -992,40 +1224,203 @@
               </tbody>
             </table>
           </div>
-          <div class="callout">新世代平台的心智模型：BMC 是對外管理入口；SMC/HMC/PMC/MCU 是分散在各模組上的現場控制器；Rack Manager 或資料中心管理軟體再把多台、多 tray、多 switch、多 power shelf 的資訊收斂成整櫃視角。</div>
+          <div class="callout">重點整理：BMC 是對外管理入口；SMC/HMC/PMC/MCU 是分散在各模組上的現場控制器；Rack Manager 或資料中心管理軟體再把多台、多 tray、多 switch、多 power shelf 的資訊收斂成整櫃視角。</div>
         </section>
 
         <section id="bmc-position" data-accent="cyan">
           <div class="section-head">
             <span class="section-index">SECTION 3</span>
             <h2>BMC 在系統中的位置</h2>
+            <span class="section-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="5" r="2.4"></circle>
+                <circle cx="5" cy="19" r="2.4"></circle>
+                <circle cx="19" cy="19" r="2.4"></circle>
+                <line x1="12" y1="7.4" x2="12" y2="12"></line>
+                <path d="M12 12 L5.8 16.8"></path>
+                <path d="M12 12 L18.2 16.8"></path>
+              </svg>
+            </span>
           </div>
-          <div class="rack-diagram">
-            <div class="rack-column">
-              <div class="label-box">維運人員 / 管理平台</div>
-              <div class="label-box">Web / Redfish / IPMI</div>
-              <div class="label-box">管理網路</div>
-            </div>
-            <div class="rack-center">
-              <div class="label-box">BMC SoC</div>
-              <div class="label-box">Linux / OpenBMC</div>
-              <div class="label-box">D-Bus / Services</div>
-            </div>
-            <div class="rack-column">
-              <div class="label-box">Sensors / PMBus</div>
-              <div class="label-box">Fan / GPIO / SGPIO</div>
-              <div class="label-box">Host CPU / PCH</div>
-              <div class="label-box">NIC / PSU / CPLD / FPGA / SSD</div>
-              <div class="label-box">KVM / Serial Console</div>
-            </div>
+          <div class="svg-diagram" aria-label="BMC 系統位置拓撲圖：左為 out-of-band 管理端，中央為 BMC SoC，右為被管理的硬體與平台">
+            <svg viewBox="0 0 920 460" role="img" aria-labelledby="bmc-pos-title">
+              <title id="bmc-pos-title">BMC SoC 為貫穿中央的控制器，左側為維運/管理網路（OOB），右側為 host CPU、sensor、fan、NIC/PSU/CPLD、KVM 等被管理硬體，各以獨立平行的匯流排連接</title>
+              <defs>
+                <marker id="arrow-pos" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(224, 237, 249, 0.9)"></path>
+                </marker>
+              </defs>
+
+              <text class="diagram-sub" x="40" y="40" style="font-size:12.5px;text-anchor:start;fill:#7fdff2;font-weight:700">◀ Out-of-band 管理端</text>
+              <text class="diagram-sub" x="880" y="40" style="font-size:12.5px;text-anchor:end;fill:#7fdff2;font-weight:700">被管理硬體 / 平台 ▶</text>
+
+              <!-- 左側：管理端 -->
+              <rect class="diagram-card" x="40" y="120" width="180" height="54"></rect>
+              <text class="diagram-sub" x="130" y="153">維運人員 / 管理平台</text>
+              <rect class="diagram-card" x="40" y="220" width="180" height="54"></rect>
+              <text class="diagram-sub" x="130" y="253">管理網路</text>
+              <path class="diagram-line" marker-end="url(#arrow-pos)" d="M 130 174 L 130 218"></path>
+              <path class="diagram-line" marker-start="url(#arrow-pos)" marker-end="url(#arrow-pos)" d="M 220 247 L 358 247"></path>
+              <text class="diagram-sub" x="289" y="239" style="font-size:11px">OOB：Web / Redfish / IPMI</text>
+
+              <!-- 中央：BMC SoC（貫穿整個硬體堆疊） -->
+              <rect class="diagram-card main" x="360" y="70" width="210" height="354" style="stroke-width:2"></rect>
+              <text class="diagram-title" x="465" y="228">BMC SoC</text>
+              <text class="diagram-sub" x="465" y="256" style="font-size:13px">Linux / OpenBMC</text>
+              <text class="diagram-sub" x="465" y="280" style="font-size:13px">D-Bus / Services</text>
+              <text class="diagram-sub" x="465" y="308" style="font-size:12px;fill:#9fb4c8">standby power 常駐</text>
+              <text class="diagram-sub" x="465" y="398" style="font-size:11px;fill:#8ba0b4">I2C · GPIO · UART · PWM · SPI · eSPI</text>
+
+              <!-- 右側：被管理硬體 -->
+              <rect class="diagram-card" x="700" y="70" width="190" height="54"></rect>
+              <text class="diagram-sub" x="795" y="103">Host CPU / PCH</text>
+              <rect class="diagram-card" x="700" y="145" width="190" height="54" style="fill:rgba(84,209,139,0.12);stroke:rgba(84,209,139,0.72)"></rect>
+              <text class="diagram-sub" x="795" y="178">Sensors / PMBus</text>
+              <rect class="diagram-card" x="700" y="220" width="190" height="54" style="fill:rgba(84,209,139,0.12);stroke:rgba(84,209,139,0.72)"></rect>
+              <text class="diagram-sub" x="795" y="253">Fan / GPIO / SGPIO</text>
+              <rect class="diagram-card" x="700" y="295" width="190" height="54"></rect>
+              <text class="diagram-sub" x="795" y="316" style="font-size:13px">NIC / PSU / CPLD</text>
+              <text class="diagram-sub" x="795" y="335" style="font-size:13px">FPGA / SSD</text>
+              <rect class="diagram-card" x="700" y="370" width="190" height="54" style="fill:rgba(45,191,173,0.12);stroke:rgba(45,191,173,0.72)"></rect>
+              <text class="diagram-sub" x="795" y="403">KVM / Serial Console</text>
+
+              <!-- BMC → 硬體：獨立平行水平匯流排（雙向：控制 + 遙測） -->
+              <path class="diagram-line" marker-start="url(#arrow-pos)" marker-end="url(#arrow-pos)" d="M 570 97 L 698 97"></path>
+              <text class="diagram-sub" x="634" y="88" style="font-size:12px">LPC / eSPI · KCS</text>
+              <path class="diagram-line" marker-start="url(#arrow-pos)" marker-end="url(#arrow-pos)" d="M 570 172 L 698 172"></path>
+              <text class="diagram-sub" x="634" y="163" style="font-size:12px">I2C / PMBus</text>
+              <path class="diagram-line" marker-start="url(#arrow-pos)" marker-end="url(#arrow-pos)" d="M 570 247 L 698 247"></path>
+              <text class="diagram-sub" x="634" y="238" style="font-size:12px">PWM / GPIO</text>
+              <path class="diagram-line" marker-start="url(#arrow-pos)" marker-end="url(#arrow-pos)" d="M 570 322 L 698 322"></path>
+              <text class="diagram-sub" x="634" y="313" style="font-size:12px">I2C / MCTP / SPI</text>
+              <path class="diagram-line" marker-start="url(#arrow-pos)" marker-end="url(#arrow-pos)" d="M 570 397 L 698 397"></path>
+              <text class="diagram-sub" x="634" y="388" style="font-size:12px">Video / SOL</text>
+            </svg>
           </div>
           <p>BMC 通常具備 CPU core、DDR、Flash、Ethernet MAC、GPIO、I2C、UART、PWM、ADC、SPI、PCIe 或 eSPI 等介面，並透過這些介面控制主板與周邊裝置。</p>
+
+          <h3>Host ↔ BMC 的 In-band 介面（KCS / LPC / eSPI）</h3>
+          <p>BMC 的管理路徑分成兩種：<strong>Out-of-band（OOB）</strong> 走管理網路（Redfish/IPMI over LAN），即使 host 關機也能用；<strong>In-band</strong> 則是 host 上的 BIOS/UEFI 或 OS 直接和 BMC 溝通的本地通道。In-band 的實體承載通常是 <strong>LPC</strong>（舊平台）或 <strong>eSPI</strong>（新平台）匯流排，上面再跑 IPMI 的 system interface。</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>介面</th><th>全名</th><th>說明</th></tr></thead>
+              <tbody>
+                <tr><td><span class="pill accent-blue">KCS</span></td><td>Keyboard Controller Style</td><td>最常見的 IPMI host interface。BIOS/OS 透過固定 I/O port 對 BMC 做 read/write 來交換 IPMI 訊息，例如 host 開機過程回報狀態、寫 SEL、設定 boot option。Linux 下對應 <code>/dev/ipmi0</code>，<code>ipmitool</code> 預設即走此通道。</td></tr>
+                <tr><td><span class="pill accent-blue">BT</span></td><td>Block Transfer</td><td>以區塊為單位傳輸的 IPMI 介面，吞吐量比 KCS 高，常見於需要較大 payload 的平台。</td></tr>
+                <tr><td><span class="pill accent-blue">SMIC</span></td><td>Server Management Interface Chip</td><td>較早期的 IPMI system interface，現今較少使用。</td></tr>
+                <tr><td><span class="pill accent-blue">SSIF</span></td><td>SMBus System Interface</td><td>讓 host 透過 SMBus（I2C）與 BMC 交換 IPMI 訊息，不佔用 LPC/eSPI 資源。</td></tr>
+                <tr><td><span class="pill accent-cyan">LPC / eSPI</span></td><td>(Enhanced) Serial Peripheral Interface</td><td>承載上述 host interface 的底層匯流排，同時也用於 BIOS POST code（port 80h）、SuperIO、host SPI flash 分享等。eSPI 是 LPC 的後繼者，腳位更少、頻寬更高。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">重點整理：KCS/BT/SMIC/SSIF 是「IPMI 訊息怎麼在 host 與 BMC 之間遞送」的 system interface；LPC/eSPI 是它們底下實際的硬體匯流排。In-band（KCS）和 Out-of-band（網路）是互補的兩條管理路徑。</div>
+
+          <h4 style="margin:24px 0 10px;color:#fff;font-size:17px;">新舊銜接：IPMI 時代 vs 現代（Redfish / MCTP）</h4>
+          <p>KCS/BT/SMIC/SSIF 是 <strong>IPMI 時代</strong>的 in-band 實作；換到 Redfish / DMTF 現代架構，「兩條路徑」與「分層」的邏輯<strong>完全沒變</strong>，只是每一層都換成新標準。</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>管理路徑</th><th>舊（IPMI 時代）</th><th>新（DMTF 現代）</th></tr></thead>
+              <tbody>
+                <tr><td><span class="pill accent-teal">Out-of-band（遠端網路）</span></td><td>IPMI over LAN</td><td>Redfish（RESTful + JSON over 網路），取代 IPMI over LAN。</td></tr>
+                <tr><td><span class="pill accent-blue">In-band（host ↔ BMC 本地）</span></td><td>IPMI message → KCS/BT/SSIF → LPC/eSPI</td><td>Redfish Host Interface（host 經內部 USB 虛擬網卡打 BMC 的 Redfish）；或 PLDM over MCTP。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>「協定格式疊在實體匯流排上」的分層思維也一樣適用，新舊只是換了每一層的標準：</p>
+          <div class="code-list">
+            <div>舊： IPMI message   →  KCS         →  LPC / eSPI</div>
+            <div>新： PLDM（資料模型） →  MCTP（傳輸層） →  PCIe VDM / SMBus / I3C（實體）</div>
+          </div>
+          <div class="callout">重點整理：In-band / Out-of-band 兩條路、以及「資料模型 → 傳輸 → 實體匯流排」的分層，是不會過時的架構邏輯。IPMI/KCS 是舊實作，現代換成 Redfish（OOB）與 Redfish Host Interface / PLDM over MCTP（in-band），但邏輯一致。詳見 <a href="#protocols" style="color:var(--cyan);text-decoration:underline;">Section 6 的 MCTP / PLDM 定位</a>。</div>
+
+          <h3>BMC 網路連接：Dedicated vs Shared（NC-SI）</h3>
+          <p>BMC 要對外提供 OOB 管理，必須有網路。常見有兩種接法：使用 <strong>專用管理網卡（Dedicated NIC）</strong>，或透過 <strong>NC-SI</strong> 共用 host 的資料網卡（Shared / LOM）。</p>
+          <p><strong>NC-SI</strong> 是 <strong>Network Controller Sideband Interface</strong>，由 DMTF 定義，讓 BMC 經一條 sideband（常見為 RMII-based transport，RBT）連到 host 的 NIC，與 host 流量共用同一個實體網路埠。NIC 端依 channel / package 區分，並把管理封包導向 BMC。</p>
+          <div class="grid cols-2">
+            <div class="tile tone-green"><h4>Dedicated NIC（專用埠）</h4><p>BMC 有獨立 RJ45 管理埠，與 host 流量實體隔離。優點是安全性與可靠性高、不受 host 網路設定影響；缺點是多一個埠與佈線成本。</p></div>
+            <div class="tile tone-amber"><h4>Shared / NC-SI（共用埠）</h4><p>BMC 透過 NC-SI 共用 host 的 LOM。優點是省埠、省線、省成本；缺點是與 host 共用實體鏈路，網路隔離與安全邊界較弱，host NIC 或設定異常可能影響管理連線。</p></div>
+          </div>
+
+          <div class="svg-diagram" aria-label="Dedicated NIC 與 NC-SI Shared 兩種 BMC 網路拓撲對照圖">
+            <svg viewBox="0 0 900 470" role="img" aria-labelledby="ncsi-title">
+              <title id="ncsi-title">上半為 Dedicated NIC（管理與資料實體分離），下半為 NC-SI Shared（BMC 經 sideband 共用 host NIC 與實體埠）</title>
+              <defs>
+                <marker id="arrow-ncsi" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(224, 237, 249, 0.9)"></path>
+                </marker>
+              </defs>
+
+              <!-- ① Dedicated NIC -->
+              <text class="diagram-sub" x="30" y="28" style="font-size:14px;text-anchor:start;fill:#eaf4ff;font-weight:700">① Dedicated NIC：管理與資料實體分離</text>
+
+              <rect class="diagram-card main" x="50" y="54" width="140" height="54"></rect>
+              <text class="diagram-title" x="120" y="87">BMC</text>
+              <rect class="diagram-card" x="350" y="54" width="170" height="54" style="fill:rgba(84,209,139,0.13);stroke:rgba(84,209,139,0.78)"></rect>
+              <text class="diagram-sub" x="435" y="86">專用 RJ45（管理埠）</text>
+              <rect class="diagram-card" x="680" y="54" width="160" height="54" style="fill:rgba(84,209,139,0.13);stroke:rgba(84,209,139,0.78)"></rect>
+              <text class="diagram-sub" x="760" y="86">管理網路</text>
+              <path class="diagram-line" marker-end="url(#arrow-ncsi)" d="M 190 81 L 348 81"></path>
+              <path class="diagram-line" marker-end="url(#arrow-ncsi)" d="M 520 81 L 678 81"></path>
+
+              <rect class="diagram-card" x="50" y="150" width="140" height="54"></rect>
+              <text class="diagram-title" x="120" y="183">Host</text>
+              <rect class="diagram-card" x="350" y="150" width="170" height="54"></rect>
+              <text class="diagram-sub" x="435" y="182">Host NIC / LOM</text>
+              <rect class="diagram-card" x="680" y="150" width="160" height="54"></rect>
+              <text class="diagram-sub" x="760" y="182">資料網路</text>
+              <path class="diagram-line" marker-end="url(#arrow-ncsi)" d="M 190 177 L 348 177"></path>
+              <path class="diagram-line" marker-end="url(#arrow-ncsi)" d="M 520 177 L 678 177"></path>
+
+              <line x1="30" y1="238" x2="870" y2="238" class="diagram-line" opacity="0.35"></line>
+
+              <!-- ② Shared / NC-SI -->
+              <text class="diagram-sub" x="30" y="272" style="font-size:14px;text-anchor:start;fill:#eaf4ff;font-weight:700">② Shared / NC-SI：共用同一顆 NIC 與實體埠</text>
+
+              <rect class="diagram-card" x="50" y="298" width="140" height="54"></rect>
+              <text class="diagram-title" x="120" y="331">Host</text>
+              <rect class="diagram-card" x="350" y="298" width="170" height="54" style="fill:rgba(243,185,79,0.16);stroke:rgba(243,185,79,0.85)"></rect>
+              <text class="diagram-sub" x="435" y="330">Host NIC / LOM（共用）</text>
+              <rect class="diagram-card" x="680" y="298" width="160" height="54" style="fill:rgba(243,185,79,0.16);stroke:rgba(243,185,79,0.85)"></rect>
+              <text class="diagram-sub" x="760" y="322" style="font-size:14px">共用 RJ45</text>
+              <text class="diagram-sub" x="760" y="342" style="font-size:12px">資料 + 管理</text>
+              <path class="diagram-line" marker-end="url(#arrow-ncsi)" d="M 190 325 L 348 325"></path>
+              <path class="diagram-line" marker-end="url(#arrow-ncsi)" d="M 520 325 L 678 325"></path>
+
+              <rect class="diagram-card main" x="50" y="396" width="140" height="54"></rect>
+              <text class="diagram-title" x="120" y="429">BMC</text>
+              <path class="diagram-line" marker-end="url(#arrow-ncsi)" style="stroke:rgba(243,185,79,0.9)" d="M 190 415 C 300 415, 320 360, 420 354"></path>
+              <text class="diagram-sub" x="300" y="392" style="font-size:12.5px">NC-SI sideband（RBT / RMII）</text>
+            </svg>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>項目</th><th>Dedicated NIC</th><th>NC-SI (Shared)</th></tr></thead>
+              <tbody>
+                <tr><td>實體埠</td><td>BMC 專屬，獨立 RJ45。</td><td>與 host 共用同一個 NIC / 埠。</td></tr>
+                <tr><td>BMC ↔ NIC 連接</td><td>BMC 內建或外接 PHY/MAC 直連。</td><td>NC-SI sideband（常見 RBT / RMII）。</td></tr>
+                <tr><td>隔離與安全</td><td>高，管理面與資料面分離。</td><td>較弱，需靠 VLAN 等邏輯隔離。</td></tr>
+                <tr><td>成本 / 佈線</td><td>較高，多一埠一線。</td><td>較低，省埠省線。</td></tr>
+                <tr><td>常見場景</td><td>企業 / 高可靠平台、要求 OOB 隔離。</td><td>密度高、成本敏感或埠數受限的平台。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">實務上不少平台兩者並存：預設走 dedicated 埠，並保留 NC-SI shared 模式做備援或彈性切換（failover / shared-NIC mode）。</div>
         </section>
 
         <section id="bmc-functions" data-accent="green">
           <div class="section-head">
             <span class="section-index">SECTION 4</span>
             <h2>基礎功能</h2>
+            <span class="section-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 16 a8 8 0 0 1 16 0"></path>
+                <line x1="12" y1="16" x2="15.5" y2="11.5"></line>
+                <circle cx="12" cy="16" r="1.1" fill="currentColor" stroke="none"></circle>
+                <line x1="4" y1="16" x2="5.5" y2="16"></line>
+                <line x1="18.5" y1="16" x2="20" y2="16"></line>
+              </svg>
+            </span>
           </div>
           <div class="grid cols-3">
             <div class="tile tone-amber"><h4>電源與開關機控制</h4><p>遠端開關機、重開機、power button/reset button 模擬、AC power restore policy、power good / power fault 監控。</p></div>
@@ -1055,6 +1450,15 @@
           <div class="section-head">
             <span class="section-index">SECTION 5</span>
             <h2>基本應用場景</h2>
+            <span class="section-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="12" rx="1.6"></rect>
+                <polyline points="7,8.5 9.5,10.5 7,12.5"></polyline>
+                <line x1="12" y1="12.5" x2="16" y2="12.5"></line>
+                <line x1="9" y1="20" x2="15" y2="20"></line>
+                <line x1="12" y1="16" x2="12" y2="20"></line>
+              </svg>
+            </span>
           </div>
           <div class="grid cols-2">
             <div class="tile tone-teal"><h4>資料中心遠端維運</h4><p>查詢硬體健康狀態、遠端重開機、讀取 event log、查看 boot console、掛載 OS installer、更新 firmware。</p></div>
@@ -1068,6 +1472,13 @@
           <div class="section-head">
             <span class="section-index">SECTION 6</span>
             <h2>常見管理介面與協定</h2>
+            <span class="section-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="12,3 20.5,7.5 12,12 3.5,7.5"></polygon>
+                <polyline points="3.5,12 12,16.5 20.5,12"></polyline>
+                <polyline points="3.5,16.5 12,21 20.5,16.5"></polyline>
+              </svg>
+            </span>
           </div>
           <h3>DMTF 是什麼</h3>
           <p><strong>DMTF</strong> 是 <strong>Distributed Management Task Force</strong>，為制定 IT 基礎架構、伺服器、資料中心與平台管理標準的產業標準組織。</p>
@@ -1184,8 +1595,16 @@
           <div class="section-head">
             <span class="section-index">SECTION 7</span>
             <h2>速查表</h2>
+            <span class="section-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="4,7 6,9 9,5"></polyline>
+                <polyline points="4,16 6,18 9,14"></polyline>
+                <line x1="12" y1="7" x2="20" y2="7"></line>
+                <line x1="12" y1="16" x2="20" y2="16"></line>
+              </svg>
+            </span>
           </div>
-          <h3>BMC 核心心智模型</h3>
+          <h3>BMC 核心重點整理</h3>
           <div class="table-wrap">
             <table>
               <thead><tr><th>問題</th><th>答案</th></tr></thead>
@@ -1218,6 +1637,9 @@
                 <tr><td>OBMF-ICP</td><td>Open Boot Management Framework 的 inter-control-plane 管理通道，可用於 BMC 與 SMC 之間交換 boot、控制、狀態與韌體流程資料。</td></tr>
                 <tr><td>Host</td><td>被 BMC 管理的主系統，例如 x86/ARM server。</td></tr>
                 <tr><td>NIC</td><td>Network Interface Controller / Card，網路介面控制器或網路卡，負責伺服器與外部網路之間的封包收發。</td></tr>
+                <tr><td>KCS</td><td>Keyboard Controller Style，最常見的 IPMI host system interface，讓 host BIOS/OS 在本地（in-band）與 BMC 交換 IPMI 訊息。</td></tr>
+                <tr><td>NC-SI</td><td>Network Controller Sideband Interface，DMTF 定義的 sideband，讓 BMC 共用 host NIC 對外做管理通訊（shared NIC）。</td></tr>
+                <tr><td>LPC / eSPI</td><td>(Enhanced) Serial Peripheral Interface，host 與 BMC/SuperIO 之間的低腳位匯流排，承載 KCS、POST code 與 host SPI flash 分享等；eSPI 為 LPC 後繼。</td></tr>
                 <tr><td>SoC</td><td>System on Chip，BMC 本身通常是一顆 SoC。</td></tr>
                 <tr><td>FRU</td><td>Field Replaceable Unit，可替換元件資訊。</td></tr>
                 <tr><td>SEL</td><td>System Event Log，系統事件紀錄。</td></tr>
@@ -1247,6 +1669,32 @@
       navToggle.setAttribute("aria-expanded", String(!collapsed));
       navToggle.setAttribute("title", collapsed ? "展開目錄" : "收合目錄");
     });
+
+    // Scroll-spy：滑動時高亮目前所在的章節連結
+    const navLinks = Array.from(document.querySelectorAll(".nav-links a"));
+    const sections = navLinks
+      .map((link) => document.querySelector(link.getAttribute("href")))
+      .filter(Boolean);
+
+    if ("IntersectionObserver" in window && sections.length) {
+      const setActive = (id) => {
+        navLinks.forEach((link) => {
+          link.classList.toggle("active", link.getAttribute("href") === "#" + id);
+        });
+      };
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          const visible = entries
+            .filter((entry) => entry.isIntersecting)
+            .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+          if (visible) setActive(visible.target.id);
+        },
+        { rootMargin: "-45% 0px -50% 0px", threshold: [0, 0.25, 0.5, 1] }
+      );
+
+      sections.forEach((section) => observer.observe(section));
+    }
   </script>
 </body>
 </html>
