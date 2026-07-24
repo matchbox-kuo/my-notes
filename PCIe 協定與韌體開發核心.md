@@ -70,6 +70,46 @@ PCIe 封包由 Transaction Layer 產生 TLP，再由 Data Link Layer 與 Physica
 | DW2 | Address `[31:2]` | Address `[63:32]` |
 | DW3 | 無 | Address `[31:2]` |
 
+**TLP Header Byte Map（DW0 / DW1）**
+
+<style>
+.tlp-header-map-wrap { overflow-x:auto; margin:16px auto 20px; }
+.tlp-header-map { width:100%; min-width:1040px; border-collapse:collapse; table-layout:fixed; text-align:center; font-size:14px; line-height:1.45; }
+.tlp-header-map th, .tlp-header-map td { border:1px solid #a8bbcf; padding:13px 9px; }
+.tlp-header-map thead th { background:#e8eef5; color:#172033; padding:9px; }
+.tlp-header-map .offset { width:82px; background:#f8fafc; white-space:nowrap; font-size:15px; }
+.tlp-header-map .field { position:relative; font-weight:700; }
+.tlp-header-map .blue { background:#dbeafe; }
+.tlp-header-map .slate { background:#eef2f6; }
+.tlp-header-map .cyan { background:#ccfbf1; }
+.tlp-header-map .green { background:#a7f3d0; }
+.tlp-header-map .violet { background:#e6ddff; }
+</style>
+
+<div class='tlp-header-map-wrap'>
+<table class='tlp-header-map' aria-label='TLP Header DW0 與 DW1 byte map'>
+  <colgroup><col style='width:82px;'><col><col><col><col></colgroup>
+  <thead><tr><th>Offset</th><th>+0</th><th>+1</th><th>+2</th><th>+3</th></tr></thead>
+  <tbody>
+    <tr>
+      <th class='offset'>DW0<br><small>Byte 0–3</small></th>
+      <td class='field blue'>Fmt / Type<br><code>Fmt=B0[7:5] · Type=B0[4:0]</code></td>
+      <td class='field slate'>TC / Attr[2]<br><code>TC=B1[6:4] · Attr[2]=B1[2]</code></td>
+      <td class='field slate'>TD / EP / Attr[1:0] / Length[9:8]<br><code>B2[7] / [6] / [5:4] / [1:0]</code></td>
+      <td class='field slate'>Length[7:0]<br><code>B3[7:0]</code></td>
+    </tr>
+    <tr>
+      <th class='offset'>DW1<br><small>Byte 4–7</small></th>
+      <td class='field cyan' colspan='2'>Requester ID<br><code>Bus[7:0] / Device[4:0] / Function[2:0]</code></td>
+      <td class='field green'>Tag<br><code>Request / Completion 配對識別碼</code></td>
+      <td class='field violet'>Last DW BE / First DW BE<br><code>B7[7:4] / B7[3:0]</code></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+> DW0 是 TLP 共通控制欄位；DW1 的格式會隨 TLP 類型改變。上圖 DW1 採 **Memory Request** 格式，Message、Completion 等 TLP 應依各自格式解讀。圖中未標出的 bit 為 reserved 或與 PCIe 版本／TLP 類型相關的欄位。
+
 **TLP Header 共通欄位（DW0 / DW1）**
 
 DW0 與 DW1 是大多數 TLP 共用的欄位，也是韌體除錯時最常觀察的部分：
@@ -412,6 +452,33 @@ sequenceDiagram
     EP->>Host: Memory Write TLP<br/>(Addr = MSI Addr, Data = MSI Data)
     Note right of Host: APIC 識別<br/>→ 觸發IRQ
 ```
+
+**MSI 訊息內容（Memory Write TLP 的組成）**
+
+MSI 沒有專用的封包型別，就是一筆長度 1 DW 的 **Posted Memory Write TLP**；「訊息」由 MSI Capability 中 Host 事先寫入的兩個欄位組成，EP 觸發時照值送出：
+
+| 欄位 | 填入 TLP 的位置 | 內容（以 x86 平台為例） |
+| :--- | :--- | :--- |
+| `Message Address` | TLP Address | `0xFEExxxxx`，落在 Local APIC 位址範圍；bit[19:12] = Destination ID（目標 CPU），RH / DM bits 控制 routing 模式 |
+| `Message Data` | TLP Data（1 DW） | bit[7:0] = **interrupt vector**（對應 IDT entry）、bit[10:8] = delivery mode（Fixed / Lowest Priority / NMI / SMI…）、bit[15] = trigger mode |
+
+- Root Complex 辨識出目標位址落在 interrupt controller 的位址範圍後，將這筆寫入轉為中斷投遞，**不會真的寫入 system memory**。
+- 多向量情境下（Multiple Message Enable 核准 2^n 個 vector），EP 以 `Message Data` 低 n bits 填入 vector index，其餘 bits 必須照抄 Host 給的值。
+- 與 MCTP over PCIe VDM 的差異：VDM 是 Msg TLP、payload 攜帶實際資料；MSI 是 MWr TLP，那 1 DW data 是給 interrupt controller 解讀的中斷編碼，不是給 driver 讀的資料。
+
+**MSI 可通知 Host 的事件**
+
+MSI 訊息本身**不攜帶任何事件內容**，只能告知 Host「vector N 的中斷發生了」；實際發生什麼事，由 driver 在 ISR 中讀取 device 的 status register 判斷。因此可通知的內容完全由裝置定義，常見包括：
+
+| 事件類型 | 範例 |
+| :--- | :--- |
+| DMA / 命令完成 | NVMe completion queue 有新 entry、網卡 Tx/Rx 完成 |
+| 錯誤事件 | Device 內部錯誤；AER（Root Port 以 MSI 通知 OS 發生 PCIe error） |
+| Hotplug 事件 | Presence detect、link 狀態變化（Root Port 的 hotplug interrupt） |
+| PME（電源管理事件） | Device 要求喚醒 |
+| Vendor-specific 事件 | Mailbox 有新訊息、doorbell 被觸發 |
+
+MSI-X 的多 vector 讓裝置可將不同事件類型（或不同 queue）對應到不同 vector，driver 便能省去「讀 status 判斷中斷來源」這一步——這是 NVMe / 高速網卡 per-queue interrupt 的基礎。
 
 * **優點**：無共享問題，Host OS 自動管理向量分配。
 * **限制**：每個 Function 最多 **32 個中斷向量**；不支援 Per-vector Masking（無法個別屏蔽某一個向量）。
@@ -2176,9 +2243,3 @@ flowchart LR
 
 ---
 > 📌 本文件整合自開發者筆記與技術對話紀錄，適用於 AST2700 PCIe 韌體工程師參考。
-
-
-
-
-
-

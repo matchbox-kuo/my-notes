@@ -602,6 +602,48 @@
       height: auto;
     }
 
+    .server-form-figure {
+      width: 100%;
+      margin: 18px 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(7, 16, 24, 0.78);
+    }
+
+    .server-form-figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 1823 / 863;
+      object-fit: cover;
+    }
+
+    .server-form-legend {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 1px;
+      margin: 0;
+      padding: 1px 0 0;
+      background: var(--line);
+    }
+
+    .server-form-legend span {
+      padding: 10px 8px;
+      background: rgba(10, 18, 28, 0.96);
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.35;
+      text-align: center;
+    }
+
+    .server-form-legend strong {
+      display: block;
+      margin-bottom: 2px;
+      color: var(--text);
+      font-size: 0.94rem;
+    }
+
     .diagram-card {
       fill: rgba(167, 139, 250, 0.12);
       stroke: rgba(167, 139, 250, 0.78);
@@ -811,41 +853,23 @@
           </div>
 
           <h3>依外型分類</h3>
-          <div class="svg-diagram" aria-label="伺服器外型分類圖">
-            <svg viewBox="0 0 760 360" role="img" aria-labelledby="server-form-title">
-              <title id="server-form-title">Tower 到 Rack，並分支到 Blade、GPU Server 與 Edge Server</title>
-              <defs>
-                <marker id="arrow-form" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                  <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(224, 237, 249, 0.9)"></path>
-                </marker>
-              </defs>
-
-              <rect class="diagram-card" x="24" y="145" width="210" height="86"></rect>
-              <text class="diagram-title" x="129" y="183">Tower</text>
-              <text class="diagram-sub" x="129" y="210">低成本 / 小型部署</text>
-
-              <rect class="diagram-card main" x="290" y="145" width="180" height="86"></rect>
-              <text class="diagram-title" x="380" y="183">Rack</text>
-              <text class="diagram-sub" x="380" y="210">資料中心主流</text>
-
-              <rect class="diagram-card" x="550" y="22" width="170" height="86"></rect>
-              <text class="diagram-title" x="635" y="58">Blade / Modular</text>
-              <text class="diagram-sub" x="635" y="85">高密度集中管理</text>
-
-              <rect class="diagram-card" x="550" y="145" width="170" height="86"></rect>
-              <text class="diagram-title" x="635" y="183">GPU Server</text>
-              <text class="diagram-sub" x="635" y="210">AI / HPC</text>
-
-              <rect class="diagram-card" x="550" y="268" width="170" height="86"></rect>
-              <text class="diagram-title" x="635" y="304">Edge Server</text>
-              <text class="diagram-sub" x="635" y="331">邊緣與工業場域</text>
-
-              <path class="diagram-line" marker-end="url(#arrow-form)" d="M 234 188 L 288 188"></path>
-              <path class="diagram-line" marker-end="url(#arrow-form)" d="M 470 188 L 548 188"></path>
-              <path class="diagram-line" marker-end="url(#arrow-form)" d="M 422 145 C 470 82, 495 58, 548 58"></path>
-              <path class="diagram-line" marker-end="url(#arrow-form)" d="M 422 231 C 470 294, 495 311, 548 311"></path>
-            </svg>
-          </div>
+          <figure class="server-form-figure">
+            <img
+              src="assets/server-form-factors.png"
+              alt="由左至右排列的塔式、機架式、刀鋒模組式、GPU 與邊緣伺服器外型比較"
+              width="1823"
+              height="863"
+              loading="lazy"
+              decoding="async"
+            >
+            <figcaption class="server-form-legend">
+              <span><strong>Tower</strong>低成本 / 小型部署</span>
+              <span><strong>Rack</strong>資料中心主流</span>
+              <span><strong>Blade / Modular</strong>高密度集中管理</span>
+              <span><strong>GPU Server</strong>AI / HPC</span>
+              <span><strong>Edge Server</strong>邊緣與工業場域</span>
+            </figcaption>
+          </figure>
           <div class="table-wrap">
             <table>
               <thead><tr><th>類型</th><th>說明</th><th>優點</th><th>限制</th></tr></thead>
@@ -1634,6 +1658,7 @@
                 <tr><td>BIC</td><td>Bridge IC。以 ASPEED AST1030 / AST1035 為例，是 BMC 的 local agent / bridge，用於延伸多節點與模組化 server 管理能力。</td></tr>
                 <tr><td>OCP</td><td>Open Compute Project，推動開放資料中心硬體、rack-scale 與模組化平台規格的產業生態。</td></tr>
                 <tr><td>OCP Streaming Boot</td><td>OCP 生態中的開機架構概念，讓 boot image / boot flow 可由管理或控制平面協調，適合 rack-scale 與模組化平台。</td></tr>
+                <tr><td>OCP 3.0</td><td>Open Compute Project NIC 3.0，OCP 定義的網卡外形與介面規格（SFF / TSFF / LFF 卡型、PCIe edge connector），統一機構尺寸、供電、熱插拔與 sideband 腳位；其中 NC-SI over RBT 與 SMBus/MCTP 等管理接腳直接走 OCP NIC 3.0 connector，是 BMC 管理網卡的標準通道。</td></tr>
                 <tr><td>OBMF-ICP</td><td>Open Boot Management Framework 的 inter-control-plane 管理通道，可用於 BMC 與 SMC 之間交換 boot、控制、狀態與韌體流程資料。</td></tr>
                 <tr><td>Host</td><td>被 BMC 管理的主系統，例如 x86/ARM server。</td></tr>
                 <tr><td>NIC</td><td>Network Interface Controller / Card，網路介面控制器或網路卡，負責伺服器與外部網路之間的封包收發。</td></tr>

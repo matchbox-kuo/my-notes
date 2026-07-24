@@ -1,0 +1,906 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cadence PCIe VDM Header 對應表</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --paper: #ffffff;
+      --ink: #172233;
+      --muted: #5f6f82;
+      --line: #d3deea;
+      --blue: #1f7ae0;
+      --amber: #b87910;
+      --rose: #c2415c;
+      --violet: #7357c8;
+      --cyan: #0f7c90;
+      --green: #158a5c;
+      --shadow: 0 18px 44px rgba(30, 48, 70, 0.12);
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif;
+      line-height: 1.68;
+      background:
+        linear-gradient(135deg, rgba(31, 122, 224, 0.10), transparent 34%),
+        linear-gradient(225deg, rgba(21, 138, 92, 0.10), transparent 32%),
+        var(--bg);
+    }
+
+    main {
+      width: min(1500px, calc(100% - 16px));
+      margin: 0 auto;
+      padding: 44px 0 56px;
+    }
+
+    .hero {
+      text-align: center;
+      margin: 0 auto 28px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 46px;
+      line-height: 1.12;
+    }
+
+    .lead {
+      width: min(980px, 100%);
+      margin: 14px auto 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .section {
+      margin-top: 22px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.90);
+      box-shadow: var(--shadow);
+    }
+
+    .section h2 {
+      margin: 0 0 6px;
+      font-size: 24px;
+      line-height: 1.24;
+      text-align: center;
+    }
+
+    .section .sub {
+      margin: 0 auto 18px;
+      max-width: 900px;
+      color: var(--muted);
+      font-size: 14px;
+      text-align: center;
+    }
+
+    /* ---------- byte-map diagram (orientation only) ---------- */
+    .packet-wrap {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+      margin-bottom: 20px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      border: 1px solid #aebdcc;
+    }
+
+    .bytemap { table-layout: fixed; }
+
+    th, td {
+      padding: 8px 6px;
+      border-right: 1px solid #aebdcc;
+      border-bottom: 1px solid #aebdcc;
+      text-align: center;
+      vertical-align: middle;
+      line-height: 1.3;
+    }
+
+    th {
+      color: #25364a;
+      background: #e8eef5;
+      font-size: 12px;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+    th:last-child, td:last-child { border-right: 0; }
+
+    .offset {
+      width: 78px;
+      color: #25364a;
+      font-weight: 900;
+      background: #f1f5f9;
+    }
+
+    .field-cell {
+      position: relative;
+      min-height: 48px;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .pcie-hdr { background: #eef2f6; }
+    .hdr-blue { background: #dbeafe; }
+    .hdr-cyan { background: #ccfbf1; }
+    .vdm-green { background: #a7f3d0; }
+    .hdr-violet { background: #e6ddff; }
+    .hdr-amber { background: #fde2b4; }
+    .hdr-rose { background: #ffd6df; }
+    .vdm-red { background: #fecaca; }
+    .vdm-blue { background: #bfdbfe; }
+
+    .dynamic-cell {
+      outline: 3px dashed rgba(194, 65, 92, 0.78);
+      outline-offset: -5px;
+    }
+
+    .mono {
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 0.93em;
+    }
+
+    /* ---------- tone system ---------- */
+    .c-blue   { --tone: var(--blue);   --tone-bg: #dbeafe; }
+    .c-amber  { --tone: var(--amber);  --tone-bg: #fde2b4; }
+    .c-rose   { --tone: var(--rose);   --tone-bg: #ffd6df; }
+    .c-violet { --tone: var(--violet); --tone-bg: #e6ddff; }
+    .c-cyan   { --tone: var(--cyan);   --tone-bg: #ccfbf1; }
+    .c-green  { --tone: var(--green);  --tone-bg: #d1fae5; }
+    .c-slate  { --tone: #5f6f82;       --tone-bg: #eef2f6; }
+
+    .map-badge {
+      display: inline-grid;
+      place-items: center;
+      min-width: 22px;
+      height: 22px;
+      padding: 0 6px;
+      border-radius: 999px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1;
+      background: var(--tone);
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+    }
+
+    .cell-badge {
+      position: absolute;
+      top: 6px;
+      left: 6px;
+    }
+
+    /* ---------- master correspondence table ---------- */
+    .map-table { table-layout: auto; }
+
+    .map-table th {
+      padding: 10px 10px;
+      font-size: 12.5px;
+      background: #e8eef5;
+    }
+
+    .map-table thead .side-hdr {
+      font-size: 13px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .side-hdr.header-side { background: #dbe9fb; color: #14406e; }
+    .side-hdr.reg-side    { background: #ffe4d6; color: #8a3b12; }
+
+    .map-table td {
+      padding: 11px 10px;
+      font-size: 13px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .map-table td.center { text-align: center; }
+
+    .map-table tbody tr td:first-child {
+      border-left: 6px solid var(--tone, #cbd5e1);
+    }
+
+    .map-table tbody tr:hover td { background: #f7fafd; }
+
+    .b-badge {
+      display: inline-grid;
+      place-items: center;
+      min-width: 26px;
+      height: 24px;
+      padding: 0 7px;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 900;
+      background: var(--tone, #94a3b8);
+    }
+
+    .arrow {
+      color: var(--rose);
+      font-weight: 900;
+      font-size: 18px;
+    }
+
+    .field-name { font-weight: 800; }
+
+    .tag {
+      display: inline-block;
+      padding: 1px 9px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .tag-static  { background: #dcfce7; color: #166534; }
+    .tag-dynamic { background: #fee2e2; color: #991b1b; }
+
+    .col-reg { background: #fff8f4; }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      justify-content: center;
+      margin: 0 0 16px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend .dot { width: 26px; height: 14px; border-radius: 4px; }
+
+    .note {
+      margin: 16px 0 0;
+      padding: 12px 14px;
+      border-left: 5px solid var(--amber);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      color: #4f3a12;
+      background: #fff7df;
+    }
+
+    .note-title {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 15px;
+      color: #6f4700;
+    }
+
+    .note-list {
+      display: grid;
+      gap: 7px;
+      margin: 0;
+      padding-left: 24px;
+      line-height: 1.65;
+    }
+
+    .note-list li { padding-left: 3px; }
+    .note-list li::marker { color: #a66500; font-weight: 900; }
+
+    /* ---------- control cards / flow ---------- */
+    .control-grid, .flow {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .control {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+      border-top: 5px solid var(--tone);
+    }
+
+    .control h3 { margin: 0 0 8px; color: var(--tone); font-size: 17px; }
+    .control ul { margin: 8px 0 0; padding-left: 20px; }
+
+    .step {
+      position: relative;
+      min-height: 150px;
+      padding: 18px 18px 18px 62px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+    }
+
+    .step::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      top: 18px;
+      left: 18px;
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff;
+      font-weight: 900;
+      background: var(--blue);
+    }
+
+    .flow { counter-reset: step; }
+    .step h3 { margin: 0 0 8px; font-size: 17px; }
+    .step p { margin: 0; color: var(--muted); }
+
+    /* ---------- 上下對應 highlight ---------- */
+    [data-map] { cursor: pointer; }
+
+    td.hl,
+    tr.hl > td {
+      box-shadow: inset 0 0 0 3px #f0a500;
+      outline: 2px solid #f0a500;
+      outline-offset: -2px;
+    }
+
+    td.pin,
+    tr.pin > td {
+      box-shadow: inset 0 0 0 3px #e0362c;
+      outline: 2px solid #e0362c;
+      outline-offset: -2px;
+    }
+
+    /* ---------- code block (send flow) ---------- */
+    .code {
+      margin: 12px 0 0;
+      padding: 13px 15px;
+      border: 1px solid #1b2c44;
+      border-radius: var(--radius);
+      background: #0f1b2d;
+      color: #d7e3f4;
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 12.5px;
+      line-height: 1.62;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .code .c { color: #7f9bbd; }   /* comment  */
+    .code .k { color: #6fd3c0; }   /* register */
+    .code .v { color: #f0b866; }   /* value    */
+    .code .f { color: #e79ac0; }   /* call     */
+
+    .step .code { margin-top: 10px; }
+    .step { min-height: 0; }
+
+    /* 送出序列改單欄直排，code block 全寬好讀 */
+    .flow-vert { grid-template-columns: 1fr; }
+
+    .subhead {
+      margin: 26px 0 4px;
+      font-size: 17px;
+      font-weight: 800;
+      color: var(--ink);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <p class="eyebrow">PCIe VDM / Cadence AXI Outbound</p>
+      <h1>Cadence PCIe VDM Header 對應表</h1>
+      <p class="lead">
+        軟體先準備完整的 <strong>TLP Header Buffer</strong>（<span class="mono">hdr_byte0~15</span>）與 payload；
+        硬體再從 buffer 取出各欄位，轉寫到 <strong>Cadence Region Descriptor</strong>、
+        <strong>VDMTAG</strong>、<strong>AXI AWADDR</strong> 與 transfer length，最後觸發 VDM 傳送。
+        下表依 Header Byte 順序說明每個軟體欄位會被硬體用在哪裡。
+      </p>
+    </header>
+
+    <!-- ================= 主對應表 ================= -->
+    <section class="section">
+      <h2>SW Header Buffer → Cadence Hardware 對應</h2>
+      <p class="sub">
+        每一列由左讀到右：<strong>軟體填入的 Header Buffer 欄位</strong> →
+        <strong>硬體取值後寫入的 Cadence register 或 AXI control</strong>。
+        Header Buffer 是封包內容的來源；右側是硬體為送出該封包所做的格式轉換。
+      </p>
+
+      <!-- 上方：byte-map 視覺化，只做定位用，badge 對應下表 # 欄 -->
+      <div class="packet-wrap">
+        <table class="bytemap" aria-label="PCIe VDM header byte layout">
+          <thead>
+            <tr>
+              <th class="offset">Offset</th>
+              <th>+0</th><th>+1</th><th>+2</th><th>+3</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="offset">Byte 0</td>
+              <td class="field-cell hdr-blue c-blue" data-map="A">
+                <span class="map-badge cell-badge">A</span>
+                Fmt / Type / Routing<br><span class="mono">Byte0[7:5] / [4:3] / [2:0]</span>
+              </td>
+              <td class="field-cell pcie-hdr" data-map="A">TC / Attr[2]<br><span class="mono">TC=Byte1[6:4] · Attr[2]=Byte1[2]</span></td>
+              <td class="field-cell pcie-hdr" data-map="A">Attr[1:0] / Length[9:8]<br><span class="mono">Attr=Byte2[5:4] · Length=Byte2[1:0]</span></td>
+              <td class="field-cell pcie-hdr" data-map="A">Length[7:0]<br><span class="mono">Byte3[7:0]</span></td>
+            </tr>
+            <tr>
+              <td class="offset">Byte 4</td>
+              <td class="field-cell hdr-cyan c-cyan" colspan="2" data-map="B1">
+                <span class="map-badge cell-badge">B1</span>
+                PCI Requester ID<br><span class="mono">Bus8 / Dev5 / Fn3</span>
+              </td>
+              <td class="field-cell vdm-green c-green" data-map="B2">
+                <span class="map-badge cell-badge">B2</span>
+                Tag / MCTP VDM Code<br><span class="mono">Pad Len · index 0x56 / byte 0x158</span>
+              </td>
+              <td class="field-cell hdr-violet dynamic-cell c-violet" data-map="B3">
+                <span class="map-badge cell-badge">B3</span>
+                Message Code<br><span class="mono">0x7E / 0x7F</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="offset">Byte 8</td>
+              <td class="field-cell hdr-amber c-amber" data-map="C">vendor_defined_info<br><span class="mono">desc0[15:8]</span></td>
+              <td class="field-cell hdr-amber c-amber" colspan="3" data-map="C">
+                <span class="map-badge cell-badge">C</span>
+                24-bit VDM Header Slice<br><span class="mono">addr0[15:8]→B9 · [23:16]→B10 · [31:24]→B11</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="offset">Byte 12</td>
+              <td class="field-cell hdr-rose c-rose" colspan="4" data-map="D">
+                <span class="map-badge cell-badge">D</span>
+                32-bit VDM Header Slice&nbsp;&nbsp;<span class="mono">addr1[7:0]→B12 · [15:8]→B13 · [23:16]→B14 · [31:24]→B15</span>
+                &nbsp;·&nbsp;<span class="mono">RSVD / Header Ver / EID / flags / tag</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="offset">Byte 16</td>
+              <td class="field-cell" style="background:#5f6f82;color:#fff" data-map="Msg">Msg Type<br><span class="mono" style="color:#fff59d">payload_byte0</span></td>
+              <td class="field-cell" style="background:#5f6f82;color:#fff" data-map="Msg">MCTP Header / Payload<br><span class="mono" style="color:#fff59d">payload_byte1</span></td>
+              <td class="field-cell" style="background:#5f6f82;color:#fff" data-map="Msg">MCTP Header / Payload<br><span class="mono" style="color:#fff59d">payload_byte2</span></td>
+              <td class="field-cell" style="background:#5f6f82;color:#fff" data-map="Msg">MCTP Header / Payload<br><span class="mono" style="color:#fff59d">payload_byte3</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="legend">
+        <span><span class="dot" style="background:#dbeafe"></span>PCIe wire header</span>
+        <span><span class="dot" style="background:#fde2b4"></span>VDM header slice</span>
+        <span><span class="dot" style="background:#bfdbfe"></span>MCTP payload</span>
+        <span><span class="dot" style="background:#fee2e2;outline:2px dashed #c2415c;outline-offset:-2px"></span>動態（AWADDR 決定）</span>
+      </div>
+
+      <!-- 主對應表：一列 = 一個對應關係，左 header / 右 register -->
+      <table class="map-table" aria-label="Header 對 Register 對應表">
+        <thead>
+          <tr>
+            <th rowspan="2" class="center">#</th>
+            <th colspan="3" class="side-hdr header-side">SW TLP Header Buffer（封包欄位來源）</th>
+            <th rowspan="2" class="center">→</th>
+            <th colspan="2" class="side-hdr reg-side">Cadence / AXI Hardware 使用位置</th>
+            <th rowspan="2">說明</th>
+          </tr>
+          <tr>
+            <th>Byte / Offset</th>
+            <th>欄位</th>
+            <th>Bit slice</th>
+            <th class="col-reg">Register / bit</th>
+            <th class="col-reg">類型</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="c-blue" data-map="A">
+            <td class="center"><span class="b-badge">A</span></td>
+            <td class="center mono">Byte 0~3</td>
+            <td class="field-name">PCIe Header DW0<br>Fmt / Type / TC / Attr / TD / Length</td>
+            <td class="mono">hdr_byte0~3</td>
+            <td class="center arrow">→</td>
+            <td class="col-reg mono">Fmt → AWADDR[16]<br>TC / TD / Attr → desc0<br>Length → AXI transfer length<br>desc0[3:0]=1101b</td>
+            <td class="col-reg center"><span class="tag tag-static">Header 轉寫</span></td>
+            <td>SW 必須先填好完整 DW0。<span class="mono">desc0[3:0]=1101b</span> 則是 <strong>Cadence 硬體本地 transaction selector</strong>，不是 PCIe spec header 欄位；此處必須依硬體要求填 <span class="mono">0xD</span>（不是 Memory transaction 的 <span class="mono">0x2</span>）。<span class="mono">desc0[21]</span> 由 <span class="mono">hdr_byte2[7]</span>（TD）取得。</td>
+          </tr>
+
+          <tr class="c-cyan" data-map="B1">
+            <td class="center"><span class="b-badge">B1</span></td>
+            <td class="center mono">Byte 4~5</td>
+            <td class="field-name">PCI Requester ID<br>Bus8 / Dev5 / Fn3</td>
+            <td class="mono">header[63:48]</td>
+            <td class="center arrow">→</td>
+            <td class="col-reg mono">desc1[7:0]=Bus<br>desc0[31:27]=Device<br>desc0[26:24]=Function</td>
+            <td class="col-reg center"><span class="tag tag-static">Header 轉寫</span></td>
+            <td>來源切換 <span class="mono">desc0[23]</span>：<span class="mono">0</span>=硬體用 Enumeration 捕捉的 Bus/Dev；<span class="mono">1</span>=軟體覆寫（才會採用 <span class="mono">desc1[7:0]</span> 與 <span class="mono">desc0[31:27]</span>）。Function 一律由軟體指定：ARI mode 用 <span class="mono">desc0[31:24]</span> 全 8 bit，Non-ARI 用 <span class="mono">desc0[26:24]</span>。<span class="mono">desc1[7:0]</span> 對應 Cadence descriptor <span class="mono">[39:32]</span>；RC mode 發起 request 時 <span class="mono">desc0[23]</span> 必須為 1。</td>
+          </tr>
+
+          <tr class="c-green" data-map="B2">
+            <td class="center"><span class="b-badge">B2</span></td>
+            <td class="center mono">Byte 6<br>(DW1)</td>
+            <td class="field-name">PCIe: Tag[7:0]<br>MCTP: VDM Code / RSVD / Pad Len</td>
+            <td class="mono">DW1[15:8]<br>Byte 6</td>
+            <td class="center arrow">→</td>
+            <td class="col-reg mono">Mgmt APB index 0x56<br>byte addr 0x158<br>VDMTAG[7:0]<br>R/W · reset 0x0</td>
+            <td class="col-reg center"><span class="tag tag-static">Header 轉寫</span></td>
+            <td>同一個 Byte 6：PCIe 視為 Tag，MCTP 用來放 VDM Code（<span class="mono">0000b</span>）/ RSVD / Pad Length。由 Management APB 寫入 byte address <span class="mono">0x158</span>（register index <span class="mono">0x56</span>），寫值為 <span class="mono">{24'h0, tag[7:0]}</span>；<span class="mono">tag=0</span> 即 VDM Code=<span class="mono">0000b</span>、Pad Len=0（payload 需 DWORD 對齊）。與 D 列 MCTP Message Tag（DW3）不同。</td>
+          </tr>
+
+          <tr class="c-violet" data-map="B3">
+            <td class="center"><span class="b-badge">B3</span></td>
+            <td class="center mono">Byte 7</td>
+            <td class="field-name">Message Code</td>
+            <td class="mono">0x7E / 0x7F</td>
+            <td class="center arrow">→</td>
+            <td class="col-reg mono">AWADDR[15]</td>
+            <td class="col-reg center"><span class="tag tag-dynamic">動態</span></td>
+            <td>由 AXI <span class="mono">AWADDR[15]</span> 決定：<span class="mono">0 → 0x7E</span>（Type 0 VDM），<span class="mono">1 → 0x7F</span>（Type 1 VDM）。</td>
+          </tr>
+
+          <tr class="c-amber" data-map="C">
+            <td class="center"><span class="b-badge">C</span></td>
+            <td class="center mono">Byte 8~11</td>
+            <td class="field-name">VDM Header Slice<br>vendor_defined_info + 24-bit</td>
+            <td class="mono">vdm_95_72<br>(B8~B11)</td>
+            <td class="center arrow">→</td>
+            <td class="col-reg mono">B8 = desc0[15:8]<br>B9 = addr0[15:8]<br>B10 = addr0[23:16]<br>B11 = addr0[31:24]</td>
+            <td class="col-reg center"><span class="tag tag-static">Header 轉寫</span></td>
+            <td>採 <strong>little-endian</strong> 對應：register 低位 byte 對 wire 上較前面的 header byte。Byte 8 由 <span class="mono">desc0[15:8]</span>（vendor_defined_info）提供；<span class="mono">addr0[7:0]=reserved</span> 填 0。routing 另由 <span class="mono">AWADDR[14:12]</span> 動態決定（見下方）。</td>
+          </tr>
+
+          <tr class="c-rose" data-map="D">
+            <td class="center"><span class="b-badge">D</span></td>
+            <td class="center mono">Byte 12~15</td>
+            <td class="field-name">32-bit VDM Header Slice</td>
+            <td class="mono">vdm_127_96<br>(B12~B15)</td>
+            <td class="center arrow">→</td>
+            <td class="col-reg mono">B12 = addr1[7:0]<br>B13 = addr1[15:8]<br>B14 = addr1[23:16]<br>B15 = addr1[31:24]</td>
+            <td class="col-reg center"><span class="tag tag-static">Header 轉寫</span></td>
+            <td>完整 32-bit slice，<strong>little-endian</strong>（<span class="mono">addr1[7:0]→Byte 12</span> … <span class="mono">addr1[31:24]→Byte 15</span>），語意依 VDM / MCTP binding 定義（RSVD / Header Ver / EID / flags / tag）。</td>
+          </tr>
+
+
+          <tr class="c-slate" data-map="Msg">
+            <td class="center"><span class="b-badge">Msg</span></td>
+            <td class="center mono">Byte 16+</td>
+            <td class="field-name">MCTP Message Header / Payload</td>
+            <td class="mono">payload</td>
+            <td class="center arrow">→</td>
+            <td class="col-reg mono">AWDATA</td>
+            <td class="col-reg center"><span class="tag tag-dynamic">動態</span></td>
+            <td>只有帶 data 的 VDM 才存在；payload 直接由 AXI <span class="mono">AWDATA</span> 提供。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="note">
+        <strong>Descriptor word 對應：</strong><span class="mono">desc0[31:0]</span> → descriptor <span class="mono">[31:0]</span>；
+        <span class="mono">desc1[31:0]</span> → descriptor <span class="mono">[63:32]</span>；
+        <span class="mono">desc2[12:0]</span> → descriptor <span class="mono">[76:64]</span>（desc2 <span class="mono">[31:13]=RSVD</span>）。
+        對照時<strong>以 bit slice 為準，不要只看欄位名稱</strong>：左表是 wire / VDM header 的 bit 寬度，右表是 Cadence register 來源。
+      </p>
+    </section>
+
+    <!-- ================= SW 建議預設值 ================= -->
+    <section class="section">
+      <h2>SW Header Buffer 建議初始值</h2>
+      <p class="sub">
+        下表是目前 MCTP VDM 送出流程的建議起始值。標示「依封包填入」的欄位不能固定為 default；
+        SW 應先完成 <span class="mono">hdr_byte0~15</span>，硬體只負責取值與轉寫。
+      </p>
+
+      <table class="map-table" aria-label="Software header buffer recommended defaults">
+        <thead>
+          <tr>
+            <th>SW Header 欄位</th>
+            <th>建議值</th>
+            <th>使用原則</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">hdr_byte0[7:5] / Fmt</td>
+            <td class="mono">3'b011</td>
+            <td>一般 MCTP VDM 帶 data，使用 4-DW Header with Data；無 data 時改為 <span class="mono">3'b001</span>。</td>
+          </tr>
+          <tr>
+            <td class="mono">hdr_byte0[4:3] / Message Type</td>
+            <td class="mono">2'b10</td>
+            <td>PCIe Message Request 的 Type 高 2 bit；Routing 另由低 3 bit 指定。</td>
+          </tr>
+          <tr>
+            <td class="mono">hdr_byte0[2:0] / Routing</td>
+            <td class="mono">3'b010</td>
+            <td>MCTP 常用 Route by ID；硬體將此值放入 <span class="mono">AWADDR[14:12]</span>。</td>
+          </tr>
+          <tr>
+            <td class="mono">hdr_byte1[6:4] / TC</td>
+            <td class="mono">3'b000</td>
+            <td>沒有特別 QoS 需求時使用 Traffic Class 0。</td>
+          </tr>
+          <tr>
+            <td class="mono">{hdr_byte1[2], hdr_byte2[5:4]} / Attr</td>
+            <td class="mono">3'b000</td>
+            <td>沒有 Relaxed Ordering、No Snoop 或其他 attribute 需求時清 0。</td>
+          </tr>
+          <tr>
+            <td class="mono">hdr_byte2[7] / TD</td>
+            <td class="mono">1'b1</td>
+            <td>目前流程要求插入 ECRC 時設 1；硬體以此值設定 <span class="mono">desc0[21]</span>。若不使用 ECRC，SW 與硬體必須同步改為 0。</td>
+          </tr>
+          <tr>
+            <td class="mono">{hdr_byte2[1:0], hdr_byte3[7:0]} / Length</td>
+            <td class="mono">ceil(payload_bytes / 4)</td>
+            <td>單位是 DW；例如 64-byte payload 填 <span class="mono">10'h010</span>。不足 4 bytes 的尾端由 Pad Length 描述。</td>
+          </tr>
+          <tr>
+            <td class="mono">hdr_byte4~5 / Requester ID</td>
+            <td>依實際 BDF 填入</td>
+            <td>Byte 4 是 Bus；ARI 時 Byte 5 全部是 Function，Non-ARI 時 Byte 5 為 Device[4:0] + Function[2:0]。</td>
+          </tr>
+          <tr>
+            <td class="mono">hdr_byte6 / VDMTAG</td>
+            <td class="mono">8'h00</td>
+            <td>VDM Code 0、Pad Length 0；payload 非 DWORD 對齊時，依實際 padding 更新 Pad Length。</td>
+          </tr>
+          <tr>
+            <td class="mono">hdr_byte7 / Message Code</td>
+            <td class="mono">8'h7F</td>
+            <td>目前流程建議 Type 1 VDM；若平台要求 Type 0 VDM，改為 <span class="mono">8'h7E</span>。</td>
+          </tr>
+          <tr>
+            <td class="mono">hdr_byte8~9 / PCI Target ID</td>
+            <td>依目標 BDF 填入</td>
+            <td>Route by ID（<span class="mono">3'b010</span>）時必須填目標端的 Bus/Device/Function；其他 routing 模式此欄位為 reserved，填 <span class="mono">16'h0000</span>。</td>
+          </tr>
+          <tr>
+            <td class="mono">hdr_byte10 / Vendor ID[15:8]</td>
+            <td class="mono">8'h1A</td>
+            <td><strong>固定值</strong>。DSP0238 規定 MCTP over PCIe VDM 的 Vendor ID 必須是 DMTF 的 <span class="mono">0x1AB4</span>，填錯對端不會將此封包辨識為 MCTP。</td>
+          </tr>
+          <tr>
+            <td class="mono">hdr_byte11 / Vendor ID[7:0]</td>
+            <td class="mono">8'hB4</td>
+            <td><strong>固定值</strong>，同上；wire 上為 big-endian，故 <span class="mono">0x1A</span> 在 Byte 10、<span class="mono">0xB4</span> 在 Byte 11。</td>
+          </tr>
+          <tr>
+            <td class="mono">hdr_byte12 / RSVD + Hdr Version</td>
+            <td class="mono">8'h01</td>
+            <td><strong>固定值</strong>。<span class="mono">[7:4]=RSVD</span> 填 0，<span class="mono">[3:0]=MCTP Header Version</span> 目前為 <span class="mono">4'b0001</span>。</td>
+          </tr>
+          <tr>
+            <td class="mono">hdr_byte13~14 / EID</td>
+            <td>依目標端填入</td>
+            <td>Byte 13 = Destination EID，Byte 14 = Source EID；由 MCTP endpoint 位址決定，無固定預設值。</td>
+          </tr>
+          <tr>
+            <td class="mono">hdr_byte15 / flags + tag</td>
+            <td>依封包填入</td>
+            <td><span class="mono">SOM / EOM / Pkt Seq[1:0] / TO / Msg Tag[2:0]</span>；由分段狀態與 message tag 決定，無固定預設值。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="note">
+        <strong class="note-title">Cadence 本地控制值（不屬於 PCIe Header Buffer）</strong>
+        <ol class="note-list">
+          <li><span class="mono">desc0[3:0] = 4'hD</span>：宣告此 outbound region 為 Vendor Message。這是硬體定義的 selector，不照 PCIe Header bit 編碼填寫，也不是 <span class="mono">0x2</span>。</li>
+          <li><span class="mono">desc0[23] = 1'b1</span>：使用 SW Header Buffer 提供的 Requester ID。</li>
+          <li><span class="mono">desc2[31:0] = 32'h0</span>：目前不使用 TPH。</li>
+          <li><span class="mono">region_num = 1</span>：建議從第一個可用 region 開始；region #0 保留。它是本地 metadata，不在 TLP Header Buffer 內。</li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ================= MCTP payload byte order ================= -->
+    <section class="section">
+      <h2>MCTP Payload 的 AXI WDATA Byte Order</h2>
+      <p class="sub">
+        MCTP payload 依 memory 中的 byte 順序放進 <span class="mono">AXI WDATA[127:0]</span>，不另外反轉 byte。
+        <span class="mono">payload_byte0</span> 放在最低 8 bit，後續 byte 依序放到更高的 byte lane；
+        因此 <span class="mono">payload_byte0</span> 同時是 wire 上 Header Byte 16 的 MCTP Message Type。
+      </p>
+
+      <div class="packet-wrap">
+        <table class="bytemap" aria-label="MCTP payload to AXI WDATA byte order">
+          <thead>
+            <tr>
+              <th class="offset">AXI WDATA</th>
+              <th>+0</th><th>+1</th><th>+2</th><th>+3</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="offset mono">[31:0]</td>
+              <td class="field-cell hdr-blue"><strong>payload_byte0</strong><br><span class="mono">[7:0]</span><br>Msg Type</td>
+              <td class="field-cell hdr-blue"><strong>payload_byte1</strong><br><span class="mono">[15:8]</span></td>
+              <td class="field-cell hdr-blue"><strong>payload_byte2</strong><br><span class="mono">[23:16]</span></td>
+              <td class="field-cell hdr-blue"><strong>payload_byte3</strong><br><span class="mono">[31:24]</span></td>
+            </tr>
+            <tr>
+              <td class="offset mono">[63:32]</td>
+              <td class="field-cell hdr-cyan"><strong>payload_byte4</strong><br><span class="mono">[39:32]</span></td>
+              <td class="field-cell hdr-cyan"><strong>payload_byte5</strong><br><span class="mono">[47:40]</span></td>
+              <td class="field-cell hdr-cyan"><strong>payload_byte6</strong><br><span class="mono">[55:48]</span></td>
+              <td class="field-cell hdr-cyan"><strong>payload_byte7</strong><br><span class="mono">[63:56]</span></td>
+            </tr>
+            <tr>
+              <td class="offset mono">[95:64]</td>
+              <td class="field-cell hdr-amber"><strong>payload_byte8</strong><br><span class="mono">[71:64]</span></td>
+              <td class="field-cell hdr-amber"><strong>payload_byte9</strong><br><span class="mono">[79:72]</span></td>
+              <td class="field-cell hdr-amber"><strong>payload_byte10</strong><br><span class="mono">[87:80]</span></td>
+              <td class="field-cell hdr-amber"><strong>payload_byte11</strong><br><span class="mono">[95:88]</span></td>
+            </tr>
+            <tr>
+              <td class="offset mono">[127:96]</td>
+              <td class="field-cell hdr-rose"><strong>payload_byte12</strong><br><span class="mono">[103:96]</span></td>
+              <td class="field-cell hdr-rose"><strong>payload_byte13</strong><br><span class="mono">[111:104]</span></td>
+              <td class="field-cell hdr-rose"><strong>payload_byte14</strong><br><span class="mono">[119:112]</span></td>
+              <td class="field-cell hdr-rose"><strong>payload_byte15</strong><br><span class="mono">[127:120]</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+<pre class="code"><span class="c">// AXI WDATA byte lanes follow the byte order in memory.</span>
+AXI_WDATA[127:0] = {payload_byte15,  <span class="c">// [127:120]</span>
+                     ...,
+                     payload_byte3,   <span class="c">// [31:24]</span>
+                     payload_byte2,   <span class="c">// [23:16]</span>
+                     payload_byte1,   <span class="c">// [15:8]</span>
+                     payload_byte0};  <span class="c">// [7:0], lowest-addressed byte</span></pre>
+
+      <p class="note">
+        <strong>Byte lane 對應：</strong><span class="mono">payload_byte0 → AXI WDATA[7:0]</span>，
+        <span class="mono">payload_byte15 → AXI WDATA[127:120]</span>。
+        這裡的 little-endian 指的是 byte-lane placement；AXI WDATA 的 byte 順序應與 memory 中的 byte 順序相同。
+      </p>
+    </section>
+
+    <!-- ================= 如何送出一個 VDM ================= -->
+    <section class="section">
+      <h2>如何送出一個 VDM</h2>
+      <p class="sub">
+        SW 先完成 <span class="mono">hdr_byte0~15</span> 與 payload buffer；接著硬體把 Header Buffer 轉寫成
+        <strong>Region Descriptor 與 VDMTAG</strong>，並從 Fmt、Message Code、Routing、Length 解出本次 AXI transaction 的控制值。
+        最後對該 region 的 <strong>Outbound Window 做一次 AXI Write</strong>，由 Cadence IP 送出相同內容的 VDM TLP。
+      </p>
+
+      <!-- 三步驟流程（附實際暫存器寫入） -->
+      <p class="subhead">送出序列</p>
+      <div class="flow flow-vert">
+        <div class="step c-blue">
+          <h3>硬體轉寫 Region Descriptor</h3>
+          <p>SW 已先備妥 Header Buffer。硬體選一個 region N（<strong>N = 1~31</strong>；region 0 在 PCIe EP0 為保留，不可用），把對應欄位寫進 <span class="mono">TLP_BASE + 0x40·N</span>（simulation code：<span class="mono">64*region_num</span>，每 region 間隔 64 bytes）。其中 <span class="mono">transaction_type=0xD</span> 是 Cadence 硬體要求的 VDM selector，不是從 PCIe spec header 直接複製。</p>
+<pre class="code"><span class="c">// TLP_BASE = 0x1C12_0000 (= 0x1C10_0000 + 0x2_0000) ;  base = TLP_BASE + 0x40*N</span>
+
+<span class="c">// desc0 @ +0x08 : VDM selector + Requester ID + attr（RMW：保留 [22],[20],[16],[7]）</span>
+wdata        = <span class="f">APB_RD</span>(base+<span class="k">0x08</span>);
+wdata[31:24] = hdr_byte5[7:0];       <span class="c">// ARI: Function[7:0]；Non-ARI: Device[4:0] + Function[2:0]</span>
+wdata[23]    = 1'b1;                 <span class="c">// requester_id_sel（控制位，不對應 hdr_byte）</span>
+wdata[21]    = hdr_byte2[7];         <span class="c">// TD / force ECRC insert</span>
+wdata[19:17] = hdr_byte1[6:4];       <span class="c">// TC</span>
+wdata[15:8]  = hdr_byte8[7:0];       <span class="c">// vendor_defined_info = vdm_95_72[31:24]</span>
+wdata[6:4]   = {hdr_byte1[2],        <span class="c">// Attr[2]</span>
+                hdr_byte2[5:4]};     <span class="c">// Attr[1:0]</span>
+wdata[3:0]   = 4'hD;                 <span class="c">// Cadence Vendor Message selector；不是 TLP header 欄位</span>
+<span class="f">APB_WR</span>(base+<span class="k">0x08</span>, wdata);
+
+<span class="c">// desc1 @ +0x0C : Bus number（RMW：保留 [31:8]）</span>
+wdata      = <span class="f">APB_RD</span>(base+<span class="k">0x0C</span>);
+wdata[7:0] = hdr_byte4[7:0];         <span class="c">// Bus number</span>
+<span class="f">APB_WR</span>(base+<span class="k">0x0C</span>, wdata);
+
+<span class="c">// desc2 @ +0x10 : 整個寫 0（TPH 不用）</span>
+<span class="f">APB_WR</span>(base+<span class="k">0x10</span>, <span class="v">0x0</span>);
+
+<span class="c">// addr0/addr1 @ +0x00/+0x04 : VDM 時＝VDM header bytes（非記憶體位址）</span>
+<span class="c">//   little-endian：register 低位 byte = wire 上較前面的 header byte</span>
+<span class="c">//   addr0[15:8]=B9 [23:16]=B10 [31:24]=B11（[7:0]=reserved 填 0）</span>
+<span class="c">//   addr1[7:0]=B12 [15:8]=B13 [23:16]=B14 [31:24]=B15</span>
+<span class="f">APB_WR</span>(base+<span class="k">0x00</span>, (hdr_byte11&lt;&lt;24)|(hdr_byte10&lt;&lt;16)|(hdr_byte9&lt;&lt;8));
+<span class="f">APB_WR</span>(base+<span class="k">0x04</span>, (hdr_byte15&lt;&lt;24)|(hdr_byte14&lt;&lt;16)|(hdr_byte13&lt;&lt;8)|hdr_byte12);</pre>
+<p class="note">RTL bit-slice 版本（含完整 RMW 寫法）見 <span class="mono">Cadence PCIe VDM Header 對應表_DD_RTL.txt</span>。</p>
+        </div>
+
+        <div class="step c-cyan">
+          <h3>硬體轉寫 VDMTAG</h3>
+          <p>Vendor Defined Message Tag register 的 index 是 <span class="mono">0x56</span>，Management APB byte address 是 <span class="mono">0x158</span>。低 8 bit 放 VDM Code 與 Pad Length，上方 24 bit 填 0，完整寫入 32 bit、不需 RMW。Payload 已 DWORD 對齊時可使用 <span class="mono">tag=0</span>，代表 VDM Code 0、Pad Length 0；否則 SW 必須依實際 padding 更新 Header Byte 6。</p>
+<pre class="code"><span class="c">// Access Vendor Defined Message Tag Register (index 0x56, byte addr 0x158)</span>
+apb_addr = APB_BASE + <span class="k">32'h0001_0000</span> + <span class="k">32'h0000_0158</span>;
+tag[7:0] = hdr_byte6[7:0];           <span class="c">// VDM Code / RSVD / Pad Length</span>
+wdata    = {24'h0, tag[7:0]};        <span class="c">// complete 32-bit write; no RMW</span>
+sim.app.<span class="f">mgmt_apb_wr</span>(apb_addr, wdata);</pre>
+        </div>
+
+        <div class="step c-rose">
+          <h3>觸發送出：一次 AXI Write</h3>
+          <p>對 region N 對應的 Outbound Window 做一筆 AXI 寫入。硬體從 Header Buffer 解出 Message Code、routing 與 transfer length，並把 payload 放入 <span class="mono">AWDATA</span>；Cadence IP 再依轉寫結果送出對應的 VDM TLP。</p>
+<pre class="code"><span class="c">// AWADDR[39:35] : Region_Sel = N（1~31；region 0 保留）</span>
+zero_data = (hdr_byte0[7:5] == 3'b001); <span class="c">// Fmt: 4-DW Header without Data</span>
+code_sel  = hdr_byte7[0];             <span class="c">// 0→0x7E(Type0) / 1→0x7F(Type1)</span>
+route     = hdr_byte0[2:0];           <span class="c">// Message Routing</span>
+length_dw = {hdr_byte2[1:0], hdr_byte3[7:0]};
+len       = zero_data ? 0 : ((length_dw == 0) ? 4096 : length_dw * 4);
+<span class="c">// AWDATA        : MCTP message + payload；payload_byte0 → WDATA[7:0]，byte order 與 memory 相同</span>
+<span class="f">AXI_WR</span>(SLV_BASE | ((uint64_t)N&lt;&lt;35)
+                | (zero_data&lt;&lt;16) | (code_sel&lt;&lt;15) | (route&lt;&lt;12),
+       payload, len);
+<span class="c">// → IP emit VDM TLP；SLV_BASE = controller AXI slave port 在 SoC address map 的落點</span></pre>
+        </div>
+      </div>
+
+      <div class="note">
+        <strong class="note-title">設計注意事項（2026-07）</strong>
+        <ol class="note-list">
+          <li>
+            <span class="mono">outbound_window(N)</span> base 由 <span class="mono">AWADDR[39:35]=N</span> 決定，
+            即 <span class="mono">SLV_BASE + N×2³⁵</span>（每 region 間隔 32&nbsp;GB）。
+            <span class="mono">5'b00001~5'b11111</span> 皆指到 PCIe EP0，因此可用 region 為 <strong>#1~#31</strong>，region #0 保留。
+          </li>
+          <li>Code-select bit 為 <span class="mono">AWADDR[15]</span>。</li>
+          <li>TX <span class="mono">done / busy / error</span> 狀態位於 <strong>DMA control registers</strong>（確切 offset 待查 spec）。</li>
+          <li><span class="mono">AXI Mgmt Reg 13 @0x434</span> 不需設定，維持 default 0。</li>
+          <li>
+            <span class="mono">AWDATA / payload</span> 採 little-endian byte-lane placement：
+            <span class="mono">payload_byte0 → WDATA[7:0]</span>，整體 byte 順序與 memory 相同。
+          </li>
+          <li>
+            <span class="mono">VDMTAG</span> register index 為 <span class="mono">0x56</span>，Management APB byte address 為
+            <span class="mono">0x158</span>；以 <span class="mono">{24'h0, tag[7:0]}</span> 完整寫入 32 bit。
+          </li>
+        </ol>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    (function () {
+      var items = Array.prototype.slice.call(document.querySelectorAll('[data-map]'));
+      var pinned = null;
+
+      function group(key) {
+        return items.filter(function (el) { return el.getAttribute('data-map') === key; });
+      }
+      function setClass(key, cls, on) {
+        group(key).forEach(function (el) { el.classList.toggle(cls, on); });
+      }
+
+      items.forEach(function (el) {
+        var key = el.getAttribute('data-map');
+
+        el.addEventListener('mouseenter', function () {
+          if (key !== pinned) setClass(key, 'hl', true);
+        });
+        el.addEventListener('mouseleave', function () {
+          if (key !== pinned) setClass(key, 'hl', false);
+        });
+        el.addEventListener('click', function () {
+          if (pinned === key) {          // 再點一次 → 取消釘住
+            setClass(key, 'pin', false);
+            pinned = null;
+            setClass(key, 'hl', true);   // 滑鼠還在上面，回到 hover 樣式
+          } else {
+            if (pinned) setClass(pinned, 'pin', false);
+            setClass(key, 'hl', false);
+            setClass(key, 'pin', true);
+            pinned = key;
+          }
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,72 @@
+-----------------------------------------------------------------------
+// Region config: 32-bit address over APB space
+region_num = 1;
+apb_base   = 32'h1C10_0000 + 32'h0002_0000;
+base       = apb_base + (32'h40 * region_num);
+-----------------------------------------------------------------------
+wdata        = APB_RD(base + 'h08);       // RMW: 保留 [22],[20],[16],[7]
+wdata[31:24] = hdr_byte5[7:0];            // ARI:
+                                          //   hdr_byte5[7:0] = Function[7:0]
+                                          // non-ARI:
+                                          //   hdr_byte5[7:3] = Device[4:0]
+                                          //   hdr_byte5[2:0] = Function[2:0]
+wdata[23]    = 1'b1;                      // requester_id_sel (控制位,
+                                          //   不對應任何 hdr_byte)
+wdata[21]    = hdr_byte2[7];               // TD / force ECRC insert
+wdata[19:17] = hdr_byte1[6:4];            // = tc
+wdata[15:8]  = hdr_byte8[7:0];            // vendor_defined_info, vdm_95_72[31:24]
+wdata[6:4]   = {hdr_byte1[2],             // = attr[2]
+                hdr_byte2[5:4]};          // = attr[1:0]
+wdata[3:0]   = 4'hD;                      // Cadence Vendor Message selector;
+                                          //   not a TLP header field
+APB_WR(base + 'h08, wdata);
+---------------------------------------------------------------------
+wdata        = APB_RD(base + 'h0C);       // RMW: 保留 [31:8]
+wdata[7:0]   = hdr_byte4[7:0];            // = bus_num
+APB_WR(base + 'h0C, wdata);
+-----------------------------------------------------------------------------
+wdata        = 32'h0;
+APB_WR(base + 'h10, wdata);					//ANS: assign [31:0] = 0;
+-----------------------------------------------------------------------------
+wdata[31:24] = hdr_byte11[7:0];            // vdm_95_72[7:0]
+wdata[23:16] = hdr_byte10[7:0];            // vdm_95_72[15:8]
+wdata[15:8]  = hdr_byte9[7:0];             // vdm_95_72[23:16]
+wdata[7:0]   = 8'h0;     				   // reserved
+APB_WR(base + 'h00, wdata);
+
+-----------------------------------------------------------------------------
+wdata[31:24] = hdr_byte15[7:0];           // vdm_127_96[7:0]
+
+wdata[23:16] = hdr_byte14[7:0];           // vdm_127_96[15:8]
+wdata[15:8]  = hdr_byte13[7:0];           // vdm_127_96[23:16]
+wdata[7:0]   = hdr_byte12[7:0];           // vdm_127_96[31:24]
+APB_WR(base + 'h04, wdata);
+-----------------------------------------------------------------------------
+The APB code is simplified as below.
+// Access Vendor Defined Message Tag Register (index 0x56, byte addr 0x158)
+apb_addr  = APB_BASE + 32'h0001_0000 + 32'h0000_0158;
+tag[7:0]  = hdr_byte6[7:0];          // VDM Code / RSVD / Pad Length
+wdata     = {24'h0, tag[7:0]};       // complete 32-bit write; no RMW
+sim.app.mgmt_apb_wr(apb_addr, wdata);
+-----------------------------------------------------------------------------
+// Step 5: Issue an AXI write to transmit the PCIe VDM.
+//
+// Decode the AXI controls from the TLP header buffer prepared by software.
+// A PCIe VDM uses a 4-DW header: Fmt=001b means no data; Fmt=011b means data.
+zero_data_en = (hdr_byte0[7:5] == 3'b001);
+
+// PCIe Length[9:0] is split across Header Byte 2 and Header Byte 3.
+// For a data TLP, Length is a DW count; Length=0 encodes 1024 DW.
+length_dw = {hdr_byte2[1:0], hdr_byte3[7:0]};
+transfer_len_bytes = zero_data_en ? 0 :
+                     ((length_dw == 10'h0) ? 4096 : (length_dw * 4));
+
+axi_addr = {region_num[4:0],               // [39:35] region number
+            3'h0,                          // [34:32] reserved
+            15'h0,                         // [31:17] reserved
+            zero_data_en,                  // [16]    Zero-Data_En
+            hdr_byte7[0],                  // [15]    0=0x7E, 1=0x7F
+            hdr_byte0[2:0],                // [14:12] Message Routing
+            12'h0};                        // [11:0]  reserved
+
+AXI_WR(axi_addr, transfer_len_bytes);      // 64 bytes when Length = 10'h010
